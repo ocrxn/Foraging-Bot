@@ -163,9 +163,13 @@ async def update_db_loop():
                 if dirty_users:
                     conn = connect_db()
                     exe = conn.cursor()
+                    dirty_values = []
                     for user_id in dirty_users:
-                        buffer_db[user_id]['pets_inv'] = json.dumps(buffer_db[user_id]['pets_inv'])
-                    dirty_values = [buffer_db[user_id] for user_id in dirty_users]
+                        user_copy = buffer_db[user_id].copy()
+
+                        if isinstance(user_copy.get('pets_inv'), dict):
+                            user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
+                        dirty_values.append(user_copy)
                     exe.executemany(buffer_query, dirty_values)
                     conn.commit()
                     dirty_users.clear()
@@ -190,12 +194,17 @@ async def update_db_loop():
             if stop_event.is_set():
                 conn = connect_db()
                 exe = conn.cursor()
+                dirty_values = []
                 for user_id in dirty_users:
-                        buffer_db[user_id]['pets_inv'] = json.dumps(buffer_db[user_id]['pets_inv'])
-                dirty_values = [buffer_db[user_id] for user_id in dirty_users]
+                    user_copy = buffer_db[user_id].copy()
+
+                    if isinstance(user_copy.get('pets_inv'), dict):
+                        user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
+                    dirty_values.append(user_copy)
                 exe.executemany(buffer_query, dirty_values)
                 conn.commit()
                 dirty_users.clear()
+                buffer_db.clear() #Cleans the entire buffer on program kill 
                 print(f"[update_db_loop] Failsafe update complete at {datetime.now()}.")
         except Exception as e:
             print(f"[update_db_loop] Final DB update failed: {e}")
@@ -343,21 +352,22 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     user_data[log_picked] += logs_broken
     user_data[f"total_{log_picked}"] += logs_broken
 
-    #Apply xp to self and to current pet
+    #Apply xp to self + check if self levels up
     user_data['xp'] += xp_gain
-    user_data['pets_inv'][result['Pet_Type']]['pet_xp'] += xp_gain
-
-    #Update current user level and xp
     new_level, remaining_xp, xp_to_next, leveled_up = await check_level_up(
         user_data['game_level'], user_data['xp'])
     user_data['game_level'] = new_level
     user_data['xp'] = remaining_xp
 
-    #Update current pet level and xp
-    new_pet_level, remaining_pet_xp, pet_xp_to_next, pet_leveled_up = await check_level_up(
-        user_data['pets_inv'][result['Pet_Type']]['level'], user_data['pets_inv'][result['Pet_Type']]['pet_xp'])
-    user_data['pets_inv'][result['Pet_Type']]['level'] = new_pet_level
-    user_data['pets_inv'][result['Pet_Type']]['pet_xp'] = remaining_pet_xp
+    #Apply xp to current pet + check if pet levels up
+    if user_data['Pet_Type'] != 'None':
+        user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'] += xp_gain
+
+        new_pet_level, remaining_pet_xp, pet_xp_to_next, pet_leveled_up = await check_level_up(
+            user_data['pets_inv'][user_data['Pet_Type']]['pet_level'], user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'])
+        
+        user_data['pets_inv'][user_data['Pet_Type']]['pet_level'] = new_pet_level
+        user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'] = remaining_pet_xp
 
     if leveled_up:
         user_data['balance'] += 100 * user_data['game_level']
@@ -368,7 +378,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
         description=(
             f"You broke **{logs_broken} {'dark oak' if log_picked == 'dark_oak' else log_picked} {'logs' if logs_broken>1 else 'log'}** and gained **{xp_gain} XP**!\n"
             f"{f'🎉 **You leveled up to level {user_data['game_level']}!** 🎉\nYou received **{100*user_data['game_level']}** coins!\n' if leveled_up else ''}"
-            f"{f'🎉 **Your {result['Pet_Type']} leveled up to level {user_data['game_level']}!** 🎉\n' if pet_leveled_up else ''}"
+            f"{f'🎉 **Your {user_data['Pet_Type']} leveled up to level {user_data['pets_inv'][user_data['Pet_Type']]['pet_level']}!** 🎉\n' if pet_leveled_up else ''}"
             f"Level: {user_data['game_level']} | XP to level {user_data['game_level']+1}: [{user_data['xp']}/{xp_to_next}]"
         ),color=0x00CC00)
 
@@ -383,7 +393,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback}
 ])
     if callback is None:
-        await interaction.response.send_message(embed=forage_embed, view=view, ephemeral=True,delete_after=20)
+        await interaction.response.send_message(embed=forage_embed, view=view, ephemeral=True)
     else:
         await interaction.response.defer()
         await interaction.edit_original_response(embed=forage_embed, view=view)
@@ -421,7 +431,7 @@ Current level: **{result['game_level']}** | Next Level: **{result['xp']}/{xp_to_
     {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
     {"label": "Shop", "style": discord.ButtonStyle.danger, "emoji": "🛒", "callback": shop_button_callback},
     {"label": "Vote", "style": discord.ButtonStyle.danger, "emoji": "<a:Vote:1383117707519459418>", "callback": vote_button_callback},
-    {"label": "GitHub", "emoji": "<a:github:1387274840154701874>", "url": "https://github.com/ocrxn/Forager_Bot"},
+    {"label": "GitHub", "emoji": "<a:github:1387274840154701874>", "url": "https://github.com/ocrxn/Foraging-Bot"},
 ])
     await interaction.response.send_message(embed=profile_embed, view=view, ephemeral=True,delete_after=120)
 
@@ -730,13 +740,14 @@ async def pet_menu(interaction: discord.Interaction):
         return
 
     pet_lines = "\n".join(
-        f"{pets.get(pet, '')} {pet}: Level {data['level']} ({data['pet_xp']} XP)"
+        f"{pets.get(pet, '')} {pet}: Level {data['pet_level']} ({data['pet_xp']} XP)"
         for pet, data in result['pets_inv'].items())
+    
     
     shop_embed = discord.Embed(
         title="Your Owned Pets",
-        description=f"""
-    **Current Pet: {pets[result['Pet_Type']]} {result['Pet_Type']}**
+        description="**No owned pets.** Purchase a pet add it to your collection." if result['Pet_Type'] == 'None' else f"""
+    **Current Pet: {pets[result['Pet_Type']]} [Lvl {result['pets_inv'][result['Pet_Type']]['pet_level']}] {result['Pet_Type']}**
     **{pet_lines}**
     P.S. Voting gives you a temporary 2x wood multiplier
         """,
@@ -841,7 +852,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
     
     await interaction.edit_original_response(content=f"You purchased {item_name} for ${cost:,.2f}.")
     if item_type == "Pet_Type":
-        buffer_db[interaction.user.id]['pets_inv'][item_name] = {'level': 0, 'pet_xp': 0}
+        buffer_db[interaction.user.id]['pets_inv'][item_name] = {'pet_level': 0, 'pet_xp': 0}
     buffer_db[interaction.user.id][item_type] = item_name
     buffer_db[interaction.user.id]["balance"] -= cost
     dirty_users.add(interaction.user.id)
