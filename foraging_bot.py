@@ -33,9 +33,6 @@ intents.members = True
 intents.message_content = True
 bot = commands.Bot(command_prefix="---IDONTLISTENTOPREFIXES---", intents=intents)
 
-#=======================================================
-#==================== ✅ BEGIN DATABASE ✅ ====================
-#=======================================================
 def connect_db():
         return mysql.connector.connect(host=HOST,user=USER,password=PASSWORD,database=DATABASE)
 
@@ -75,6 +72,7 @@ async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
                 "Armor_Type": result["Armor_Type"],
                 "Pet_Type": result["Pet_Type"],
                 "pets_inv": json.loads(result['pets_inv']) if isinstance(result['pets_inv'], str) else (result['pets_inv'] or {}),
+                "minions": json.loads(result['minions']) if isinstance(result['minions'], str) else (result['minions'] or {}),
                 "logs": result["logs"],
                 "acacia": result["acacia"],
                 "birch": result["birch"],
@@ -100,6 +98,7 @@ async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
                 "Armor_Type": Armor_Type,
                 "Pet_Type": Pet_Type,
                 "pets_inv": {},
+                "minions": {},
                 "logs": logs,
                 "acacia": acacia,
                 "birch": birch,
@@ -139,6 +138,7 @@ async def update_db_loop():
                 Armor_Type = %(Armor_Type)s,
                 Pet_Type = %(Pet_Type)s,
                 pets_inv = %(pets_inv)s,
+                minions = %(minions)s,
                 logs = %(logs)s,
                 acacia = %(acacia)s,
                 birch = %(birch)s,
@@ -169,6 +169,8 @@ async def update_db_loop():
 
                         if isinstance(user_copy.get('pets_inv'), dict):
                             user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
+                        if isinstance(user_copy.get('minions'), dict):
+                            user_copy['minions'] = json.dumps(user_copy['minions'])
                         dirty_values.append(user_copy)
                     exe.executemany(buffer_query, dirty_values)
                     conn.commit()
@@ -200,11 +202,13 @@ async def update_db_loop():
 
                     if isinstance(user_copy.get('pets_inv'), dict):
                         user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
+                    if isinstance(user_copy.get('minions'), dict):
+                            user_copy['minions'] = json.dumps(user_copy['minions'])
                     dirty_values.append(user_copy)
                 exe.executemany(buffer_query, dirty_values)
                 conn.commit()
                 dirty_users.clear()
-                buffer_db.clear() #Cleans the entire buffer on program kill 
+                buffer_db.clear()
                 print(f"[update_db_loop] Failsafe update complete at {datetime.now()}.")
         except Exception as e:
             print(f"[update_db_loop] Final DB update failed: {e}")
@@ -225,17 +229,10 @@ async def shutdown():
             pass
     await bot.close()
     print("✅ Bot closed cleanly.")  
-#=======================================================
-#==================== 🔺 END DATABASE 🔺 ====================
-#=======================================================
 
 
 user_ui_state = {}
   
-#=======================================================
-#==================== ✅ BEGIN SLASH COMMANDS ✅ ====================
-#=======================================================
-#Sync command to update bot tree (Owner role required)
 @commands.has_role("Owner")
 @app_commands.default_permissions()
 @bot.tree.command(name='sync',description='Sync slash commands')
@@ -315,8 +312,6 @@ def xp_for_level(level, base_xp=100, growth_rate=1.3):
 async def check_level_up(current_level, current_xp, base_xp=100, growth_rate=1.3):
     """Check if user should level up and return updated stats"""
     leveled_up = False
-    
-    # Keep checking for level ups (in case of multiple levels gained)
     while True:
         xp_needed_for_next_level = xp_for_level(current_level, base_xp, growth_rate)
         
@@ -327,7 +322,6 @@ async def check_level_up(current_level, current_xp, base_xp=100, growth_rate=1.3
         else:
             break
     
-    # Calculate XP needed for next level
     xp_to_next = xp_for_level(current_level, base_xp, growth_rate)
     
     return current_level, current_xp, xp_to_next, leveled_up
@@ -346,6 +340,13 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     log_picked = random.choice(log_types)
     logs_broken = int(random.randint(1, 10) * items.ITEMS['Axe_Type'][user_data['Axe_Type']]['power']) // 10
     xp_gain = 75 * logs_broken if random.random() < 0.05 else random.randint(1, 5) * logs_broken
+
+    pet_type = buffer_db[user_id]['Pet_Type']
+    pet_data = buffer_db[user_id]['pets_inv'].get(pet_type)
+
+    if pet_data:
+        pet_level = pet_data.get('pet_level', 0)
+        xp_gain *= round(items.ITEMS['Pet_Type'][pet_type]['xp_boost'] * (1.05 + ((pet_level - 1) / 100) * (5.0 - 1.05)))
 
     user_data["logs"] += logs_broken
     user_data["total_logs"] += logs_broken
@@ -591,7 +592,7 @@ async def shop_axe_logic(interaction: discord.Interaction):
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
     item_label = items.ITEMS['Axe_Type']
-    # Calculate the maximum width needed for the name column
+
     max_name_width = max(len(f"{axes[axe]} {axe.replace('_', ' ').title()}") for axe in axes.keys())
 
     shop_embed = discord.Embed(
@@ -759,6 +760,42 @@ async def pet_menu(interaction: discord.Interaction):
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
+async def pet_autocomplete(interaction: discord.Interaction, current: str):
+    if interaction.user.id in buffer_db:
+        result = buffer_db[interaction.user.id]
+        
+    else:
+        result = await retrieve(interaction)
+        if isinstance(result.get('pets_inv'), str):
+            result['pets_inv'] = json.loads(result['pets_inv'])
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in result['pets_inv'].keys()
+        if current.lower() in name.lower()][:25]
+
+async def equip_pet_logic(interaction: discord.Interaction, pet_name: str):
+    if interaction.user.id in buffer_db:
+        result = buffer_db[interaction.user.id]
+    else:
+        result = await retrieve(interaction)
+        await create_temp_user(interaction)
+    if pet_name in result['pets_inv'].keys():
+        buffer_db[interaction.user.id]['Pet_Type'] = pet_name
+        dirty_users.add(interaction.user.id)
+
+        await interaction.response.send_message(
+            content=f"You equipped {pets.get(pet_name, pet_name)} [Lvl {result['pets_inv'][result['Pet_Type']]['pet_level']}] {pet_name}!", ephemeral=True)
+    else:
+        await interaction.response.send_message(
+            content=f"Something went wrong.", ephemeral=True)
+
+@bot.tree.command(name='equip_pet', description='Enter name of pet to equip.')
+@app_commands.describe(message='Equip pet...')
+@app_commands.autocomplete(message=pet_autocomplete)
+async def equip_pet(interaction: discord.Interaction, message: str):
+    await equip_pet_logic(interaction, message)
+
+
 async def shop_minion_logic(interaction: discord.Interaction):
     if interaction.user.id in buffer_db:
         result = buffer_db[interaction.user.id]
@@ -784,9 +821,6 @@ P.S. Voting gives you a temporary 2x wood multiplier
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
-#=======================================================
-#==================== 🔺 END SLASH COMMANDS 🔺 ====================
-#=======================================================
 async def is_downgrade(interaction, result, item_type, item_name):
     tier_list = list(items.ITEMS[item_type].keys())    
     player_current_item = result[item_type]
@@ -925,14 +959,13 @@ def create_view(button_configs):
     if not is_multi_row:
         # Flat list of buttons
         if len(button_configs) <= 5:
-            button_rows = [button_configs]  # one row only
+            button_rows = [button_configs]
         else:
             # Chunk into rows of max 5 buttons
             button_rows = [button_configs[i:i+5] for i in range(0, len(button_configs), 5)]
     else:
         button_rows = button_configs
 
-    # Now iterate through button_rows and add buttons with row indices
     for row_index, row in enumerate(button_rows):
         for config in row:
             # URL buttons
@@ -989,9 +1022,6 @@ def create_view(button_configs):
 
     return view
 
-
-
-# Button Callbacks
 async def vote_button_callback(interaction: discord.Interaction):
     await vote_logic(interaction)
 
@@ -1029,11 +1059,9 @@ async def shop_minion_callback(interaction: discord.Interaction):
     await shop_minion_logic(interaction)
 
 
-#Run the Bot
 @bot.event
 async def on_ready():
     try:
-        #Initiate update db loop
         global update_task
         print(f'{bot.user} has connected to Discord!')
         update_task = asyncio.create_task(update_db_loop())

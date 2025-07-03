@@ -87,69 +87,88 @@ ITEMS = {
     'Pet_Type': {
         'Squirrel': {
             'tier': 'COMMON',
-            'cost': 100
+            'cost': 100,
+            'xp_boost': 1.005
         },
         'Raccoon': {
             'tier': 'COMMON',
-            'cost': 100
+            'cost': 100,
+            'xp_boost': 1.005
         },
         'Mushroom Spirit': {
             'tier': 'COMMON',
-            'cost': 100
+            'cost': 100,
+            'xp_boost': 1.005
         },
         'Beaver': {
             'tier': 'RARE',
-            'cost': 1000
+            'cost': 1000,
+            'xp_boost': 1.01
         },
         'Woodpecker': {
             'tier': 'RARE',
-            'cost': 1000
+            'cost': 1000,
+            'xp_boost': 1.01
         },
         'Timber Wolf': {
             'tier': 'RARE',
-            'cost': 1000
+            'cost': 1000,
+            'xp_boost': 1.01
         },
         'Fairy': {
             'tier': 'EPIC',
-            'cost': 10000
+            'cost': 10000,
+            'xp_boost': 1.015
         },
         'Golden Finch': {
             'tier': 'EPIC',
-            'cost': 10000
+            'cost': 10000,
+            'xp_boost': 1.015
         },
         'Leaf Golem': {
             'tier': 'EPIC',
-            'cost': 10000
+            'cost': 10000,
+            'xp_boost': 1.015
         },
         'Dryad Queen': {
             'tier': 'LEGENDARY',
-            'cost': 100000
+            'cost': 100000,
+            'xp_boost': 1.02
         },
         'Ancient Entling': {
             'tier': 'LEGENDARY',
-            'cost': 100000
+            'cost': 100000,
+            'xp_boost': 1.02
         },
         "Lumberjack's Ghost": {
             'tier': 'LEGENDARY',
-            'cost': 100000
+            'cost': 100000,
+            'xp_boost': 1.02
         },
         "Ember": {
             'tier': 'MYTHIC',
-            'cost': 1000000
+            'cost': 1000000,
+            'xp_boost': 1.025
         },
         "Woodland Nymph": {
             'tier': 'MYTHIC',
-            'cost': 1000000
+            'cost': 1000000,
+            'xp_boost': 1.025
         },
         "Hypixel's Echo": {
             'tier': 'DIVINE',
-            'cost': 10000000
+            'cost': 10000000,
+            'xp_boost': 1.05
         },
         "Herobrine's Omen": {
             'tier': 'DIVINE',
-            'cost': 10000000
+            'cost': 10000000,
+            'xp_boost': 1.05
         },
+    },
+    'Minion_Type': {
+        'a': 1,
+        'b': 2             
     }
 }
-
 
