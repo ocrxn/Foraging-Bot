@@ -20,224 +20,35 @@ from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import Error
 
-import items
+from config import *
+
+import items_map
 from emoji_map import armor, axes, minions, pets, wood, wood_id
 
+from bot_instance import bot
 
-load_dotenv()
-HOST = os.getenv('host_token')
-USER = os.getenv('user_token')
-PASSWORD = os.getenv('password_token')
-DATABASE = os.getenv('database_token')
-TOKEN = os.getenv('my_token')
-GUILD = os.getenv('my_guild')
-TRUNCATE = os.getenv('truncate_token')
+from db import dirty_users,buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
 
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
-bot = commands.Bot(command_prefix="---IDONTLISTENTOPREFIXES---", intents=intents)
+from ui_helpers import (
+    vote_button_callback,
+    forage_button_callback,
+    profile_button_callback,
+    log_totals_callback,
+    shop_button_callback,
+    shop_inventory_callback,
+    sell_inventory_callback,
+    shop_axe_callback,
+    shop_armor_callback,
+    shop_pet_callback,
+    pet_menu_callback,
+    shop_minion_callback,
+    minion_slot_view_callback,
+)
 
-def connect_db():
-        return mysql.connector.connect(host=HOST,user=USER,password=PASSWORD,database=DATABASE)
-
-async def retrieve(interaction):
-    try:
-        conn = connect_db()
-        exe = conn.cursor(dictionary=True)
-        exe.execute("SELECT * FROM forager.stats WHERE dc_id=%s", (interaction.user.id,))
-        result = exe.fetchone()
-        if result:
-            pets_inv_raw = result['pets_inv']
-            if not pets_inv_raw:
-                result['pets_inv'] = {}
-            else:
-                result['pets_inv'] = json.loads(pets_inv_raw)
-        return result
-    except mysql.connector.Error as error:
-        await interaction.followup.send(f"An error occurred while retrieving data: {error}")
-    finally:
-        exe.close()
-        conn.close()
-
-buffer_db = {}
-dirty_users = set()
-async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
-                     Axe_Type="None", Armor_Type="None", Pet_Type="None", logs=0,acacia=0,birch=0,dark_oak=0,
-                     jungle=0,oak=0,spruce=0,total_logs=0,total_acacia=0,total_birch=0,total_dark_oak=0,total_jungle=0,total_oak=0,total_spruce=0):
-    try:
-        result = await retrieve(interaction)
-        if result:
-            buffer_db[interaction.user.id] = {
-                "dc_id": result["dc_id"],
-                "game_level": result["game_level"],
-                "xp": result['xp'],
-                "balance": int(result["balance"]),
-                "Axe_Type": result["Axe_Type"],
-                "Armor_Type": result["Armor_Type"],
-                "Pet_Type": result["Pet_Type"],
-                "pets_inv": json.loads(result['pets_inv']) if isinstance(result['pets_inv'], str) else (result['pets_inv'] or {}),
-                "minions": json.loads(result['minions']) if isinstance(result['minions'], str) else (result['minions'] or {}),
-                "logs": result["logs"],
-                "acacia": result["acacia"],
-                "birch": result["birch"],
-                "dark_oak": result["dark_oak"],
-                "jungle": result["jungle"],
-                "oak": result["oak"],
-                "spruce": result["spruce"],
-                "total_logs": result["total_logs"],
-                "total_acacia": result["total_acacia"],
-                "total_birch": result["total_birch"],
-                "total_dark_oak": result["total_dark_oak"],
-                "total_jungle": result["total_jungle"],
-                "total_oak": result["total_oak"],
-                "total_spruce": result["total_spruce"]
-        }
-        else:
-            buffer_db[interaction.user.id] = {
-                "dc_id": interaction.user.id,
-                "game_level": game_level,
-                "xp": xp,
-                "balance": balance,
-                "Axe_Type": Axe_Type,
-                "Armor_Type": Armor_Type,
-                "Pet_Type": Pet_Type,
-                "pets_inv": {},
-                "minions": {},
-                "logs": logs,
-                "acacia": acacia,
-                "birch": birch,
-                "dark_oak": dark_oak,
-                "jungle": jungle,
-                "oak": oak,
-                "spruce": spruce,
-                "total_logs": total_logs,
-                "total_acacia": total_acacia,
-                "total_birch": total_birch,
-                "total_dark_oak": total_dark_oak,
-                "total_jungle": total_jungle,
-                "total_oak": total_oak,
-                "total_spruce": total_spruce
-        }
-    except Error:
-        print(f"Error while creating temp user: {Error}")
-
-def signal_handler(sig, frame):
-    print(f"Signal received: {sig}")
-    loop = asyncio.get_event_loop()
-    loop.create_task(shutdown())
-
-signal.signal(signal.SIGINT, signal_handler)
-signal.signal(signal.SIGTERM, signal_handler)
-
-update_task = None
-stop_event = asyncio.Event()
-
-async def update_db_loop():
-    buffer_query = """UPDATE forager.stats SET
-                dc_id = %(dc_id)s,
-                game_level = %(game_level)s,
-                xp = %(xp)s,
-                balance = %(balance)s,
-                Axe_Type = %(Axe_Type)s,
-                Armor_Type = %(Armor_Type)s,
-                Pet_Type = %(Pet_Type)s,
-                pets_inv = %(pets_inv)s,
-                minions = %(minions)s,
-                logs = %(logs)s,
-                acacia = %(acacia)s,
-                birch = %(birch)s,
-                dark_oak = %(dark_oak)s,
-                jungle = %(jungle)s,
-                oak = %(oak)s,
-                spruce = %(spruce)s,
-                total_logs = %(total_logs)s,
-                total_acacia = %(total_acacia)s,
-                total_birch = %(total_birch)s,
-                total_dark_oak = %(total_dark_oak)s,
-                total_jungle = %(total_jungle)s,
-                total_oak = %(total_oak)s,
-                total_spruce = %(total_spruce)s
-                WHERE dc_id = %(dc_id)s
-        """
-    try:
-        while not stop_event.is_set():
-            conn = None
-            exe = None
-            try:
-                if dirty_users:
-                    conn = connect_db()
-                    exe = conn.cursor()
-                    dirty_values = []
-                    for user_id in dirty_users:
-                        user_copy = buffer_db[user_id].copy()
-
-                        if isinstance(user_copy.get('pets_inv'), dict):
-                            user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
-                        if isinstance(user_copy.get('minions'), dict):
-                            user_copy['minions'] = json.dumps(user_copy['minions'])
-                        dirty_values.append(user_copy)
-                    exe.executemany(buffer_query, dirty_values)
-                    conn.commit()
-                    dirty_users.clear()
-                    print(f"[update_db_loop] 🟢 Database updated at {datetime.now()}")
-                    
-                else:
-                    print(f"[update_db_loop] 🟡 Buffer empty. Timestamp: {datetime.now()}")
-                    
-            except Exception as e:
-                print(f"[update_db_loop] 🔴 WARNING: DB update failed at {datetime.now()}: {e}")
-            if exe:
-                exe.close()
-            if conn:
-                conn.close()
-            await asyncio.sleep(60)
-    except asyncio.CancelledError:
-        pass
-    finally:
-        conn = None
-        exe = None
-        try:
-            if stop_event.is_set():
-                conn = connect_db()
-                exe = conn.cursor()
-                dirty_values = []
-                for user_id in dirty_users:
-                    user_copy = buffer_db[user_id].copy()
-
-                    if isinstance(user_copy.get('pets_inv'), dict):
-                        user_copy['pets_inv'] = json.dumps(user_copy['pets_inv'])
-                    if isinstance(user_copy.get('minions'), dict):
-                            user_copy['minions'] = json.dumps(user_copy['minions'])
-                    dirty_values.append(user_copy)
-                exe.executemany(buffer_query, dirty_values)
-                conn.commit()
-                dirty_users.clear()
-                buffer_db.clear()
-                print(f"[update_db_loop] Failsafe update complete at {datetime.now()}.")
-        except Exception as e:
-            print(f"[update_db_loop] Final DB update failed: {e}")
-        finally:
-            if exe:
-                exe.close()
-            if conn:
-                conn.close()
-
-async def shutdown():
-    print("🔻 Shutdown initiated...\n🔻 Triggering failsafe update...")
-    stop_event.set()
-    if update_task:
-        update_task.cancel()
-        try:
-            await update_task
-        except asyncio.CancelledError:
-            pass
-    await bot.close()
-    print("✅ Bot closed cleanly.")  
+from view import create_view
 
 
-user_ui_state = {}
-  
+
 @commands.has_role("Owner")
 @app_commands.default_permissions()
 @bot.tree.command(name='sync',description='Sync slash commands')
@@ -415,7 +226,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     logs_broken = random.randint(1, 10)
                        
     if user_data['Axe_Type'] != 'None':
-         logs_broken *= math.floor(items.ITEMS['Axe_Type'][user_data['Axe_Type']]['power'] / 10)
+         logs_broken *= math.floor(items_map.ITEMS['Axe_Type'][user_data['Axe_Type']]['power'] / 10)
     xp_gain = 75 * logs_broken if random.random() < 0.05 else random.randint(1, 5) * logs_broken
 
     pet_type = buffer_db[user_id]['Pet_Type']
@@ -423,7 +234,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
 
     if pet_data:
         pet_level = pet_data.get('pet_level', 0)
-        xp_gain *= round(items.ITEMS['Pet_Type'][pet_type]['xp_boost'] * (1.05 + ((pet_level - 1) / 100) * (5.0 - 1.05)))
+        xp_gain *= round(items_map.ITEMS['Pet_Type'][pet_type]['xp_boost'] * (1.05 + ((pet_level - 1) / 100) * (5.0 - 1.05)))
 
     user_data["logs"] += logs_broken
     user_data["total_logs"] += logs_broken
@@ -670,7 +481,7 @@ async def shop_axe_logic(interaction: discord.Interaction):
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
-    item_label = items.ITEMS['Axe_Type']
+    item_label = items_map.ITEMS['Axe_Type']
 
     max_name_width = max(len(f"{axes[axe]} {axe.replace('_', ' ').title()}") for axe in axes.keys())
 
@@ -710,7 +521,7 @@ async def shop_armor_logic(interaction: discord.Interaction):
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
-    price_label = items.ITEMS['Armor_Type']
+    price_label = items_map.ITEMS['Armor_Type']
     shop_embed = discord.Embed(
         title="Purchase Armor",
         description=f"""Items to purchase.
@@ -750,7 +561,7 @@ async def shop_pet_logic(interaction: discord.Interaction):
         return
     
     tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
-    items_dict = items.ITEMS["Pet_Type"]
+    items_dict = items_map.ITEMS["Pet_Type"]
     current_page = 0
 
     def make_embed(page):
@@ -808,7 +619,7 @@ async def shop_pet_logic(interaction: discord.Interaction):
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True, delete_after=60)
 
 
-async def pet_menu(interaction: discord.Interaction):
+async def pet_menu_logic(interaction: discord.Interaction):
     if interaction.user.id in buffer_db:
         result = buffer_db[interaction.user.id]
         
@@ -841,7 +652,7 @@ async def pet_menu(interaction: discord.Interaction):
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
-async def pet_autocomplete(interaction: discord.Interaction, current: str):
+async def pet_autocomplete_logic(interaction: discord.Interaction, current: str):
     if interaction.user.id in buffer_db:
         result = buffer_db[interaction.user.id]
         
@@ -872,7 +683,7 @@ async def equip_pet_logic(interaction: discord.Interaction, pet_name: str):
 
 @bot.tree.command(name='equip_pet', description='Enter name of pet to equip.')
 @app_commands.describe(message='Equip pet...')
-@app_commands.autocomplete(message=pet_autocomplete)
+@app_commands.autocomplete(message=pet_autocomplete_logic)
 async def equip_pet(interaction: discord.Interaction, message: str):
     await equip_pet_logic(interaction, message)
 
@@ -992,15 +803,11 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
         ]])
         await interaction.response.edit_message(embed=embed, view=view)
 
-    # return view_callback
-
-
-
 
 
 
 async def is_downgrade(interaction, result, item_type, item_name):
-    tier_list = list(items.ITEMS[item_type].keys())    
+    tier_list = list(items_map.ITEMS[item_type].keys())    
     player_current_item = result[item_type]
 
     if player_current_item == "None":
@@ -1019,7 +826,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
     if not result:
         await interaction.followup.send("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
-    item_info = items.ITEMS.get(item_type, {}).get(item_name)
+    item_info = items_map.ITEMS.get(item_type, {}).get(item_name)
 
     if not item_info:
         await interaction.followup.send("This item doesn't exist.", ephemeral=True)
@@ -1052,7 +859,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         result["minions"][current_slots+1] = 'None'
         result["balance"] -= cost
 
-        item_info = items.ITEMS.get('Minion_Type', {}).get("slot_costs")
+        item_info = items_map.ITEMS.get('Minion_Type', {}).get("slot_costs")
         current_slots = len(result["minions"])
         shop_embed = discord.Embed(
             title="Minions Menu",
@@ -1156,182 +963,3 @@ P.S. Voting gives you a temporary 2x wood multiplier
 ])
 
     await interaction.edit_original_response(embed=sell_embed,view=view)
-
-async def minion_gui(interaction: discord.Interaction):
-    await interaction.response.defer()
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
-        await create_temp_user(interaction)
-
-    if not result:
-        await interaction.followup.send("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
-    lines = [
-    (f'1. {wood['logs']} Sell ALL', result['logs']),
-    (f'2. {wood['acacia']} Sell Acacia', result['acacia']),
-    (f'3. {wood['birch']} Sell Birch', result['birch']),
-    (f'4. {wood['dark_oak']} Sell Dark Oak', result['dark_oak']),
-    (f'5. {wood['jungle']} Sell Jungle', result['jungle']),
-    (f'6. {wood['oak']} Sell Oak', result['oak']),
-    (f'7. {wood['spruce']} Sell Spruce', result['spruce']),
-]
-    desc = ""
-    for left_text, count in lines:
-        right_text = f"({count:,} | ${count*2:,})"
-        total_dots = 80 - len(left_text) - len(right_text)
-        desc += f"{left_text}{'.'*total_dots}{right_text}\n"
-    sell_embed = discord.Embed(
-            title="Sell Wood Menu",
-            description=f"""```💵```
-{desc}
-P.S. Voting gives you a temporary 2x wood multiplier
-            """,
-        timestamp=datetime.now()
-        )
-
-    view = create_view([
-    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", "sell_type": 'logs', 'disabled': result['logs']<1},
-    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", "sell_type": 'acacia', 'disabled': result['acacia']<1},
-    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", "sell_type": 'birch', 'disabled': result['birch']<1},
-    {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", "sell_type": 'dark_oak', 'disabled': result['dark_oak']<1},
-    {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", "sell_type": 'jungle', 'disabled': result['jungle']<1},
-    {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", "sell_type": 'oak', 'disabled': result['oak']<1},
-    {"label": "Sell Spruce", "style": discord.ButtonStyle.gray, "emoji": f"{wood['spruce']}", "sell_type": 'spruce', 'disabled': result['spruce']<1},        
-    {"label": "Back to [Shop - Main]", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
-])
-
-    await interaction.edit_original_response(embed=sell_embed,view=view)
-    
-
-def create_view(button_configs):
-    view = View(timeout=None)
-
-    if not button_configs:
-        return view
-
-    is_multi_row = isinstance(button_configs[0], list)
-
-    if not is_multi_row:
-        if len(button_configs) <= 5:
-            button_rows = [button_configs]
-        else:
-            button_rows = [button_configs[i:i+5] for i in range(0, len(button_configs), 5)]
-    else:
-        button_rows = button_configs
-
-    for row_index, row in enumerate(button_rows):
-        for config in row:
-            # URL buttons
-            if config.get('url'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.link),
-                    emoji=config.get('emoji'),
-                    url=config['url'],
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-            # Purchase buttons
-            elif config.get('item_type'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    custom_id = config.get('item_name') or None,
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-                async def callback(interaction, item_type=config['item_type'], item_name=config.get('item_name') or None):
-                    await purchase_item(interaction, item_type, item_name)
-                button.callback = callback
-            # Sell buttons
-            elif config.get('sell_type'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-
-                def make_sell_callback(sell_type):
-                    async def callback(interaction):
-                        await sell_inventory(interaction, sell_type)
-                    return callback
-
-                button.callback = make_sell_callback(config.get('sell_type'))
-            else:
-                def create_button_callback(callback, args):
-                    async def cb(interaction):
-                        await callback(interaction, *args)
-                    return cb
-                
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-                args = config.get('args', [])
-
-                button.callback = create_button_callback(config['callback'], config.get('args', []))
-
-                
-
-            view.add_item(button)
-
-    return view
-
-async def vote_button_callback(interaction: discord.Interaction):
-    await vote_logic(interaction)
-
-async def forage_button_callback(interaction: discord.Interaction):
-    await forage_logic(interaction, callback='callback')
-
-async def profile_button_callback(interaction: discord.Interaction):
-    await profile_logic(interaction)
-    
-async def log_totals_callback(interaction: discord.Interaction):
-    await log_totals_logic(interaction)
-
-async def shop_button_callback(interaction: discord.Interaction):
-    await shop_logic(interaction)
-
-async def shop_inventory_callback(interaction: discord.Interaction):
-    await shop_inventory_logic(interaction)
-
-async def sell_inventory_callback(interaction: discord.Interaction):
-    await sell_inventory_logic(interaction)
-
-async def shop_axe_callback(interaction: discord.Interaction):
-    await shop_axe_logic(interaction)
-
-async def shop_armor_callback(interaction: discord.Interaction):
-    await shop_armor_logic(interaction)
-
-async def shop_pet_callback(interaction: discord.Interaction):
-    await shop_pet_logic(interaction)
-
-async def pet_menu_callback(interaction: discord.Interaction):
-    await pet_menu(interaction)
-
-async def shop_minion_callback(interaction: discord.Interaction, current_page):
-    await shop_minion_logic(interaction, start_page=current_page['index'])
-  
-async def minion_slot_view_callback(interaction: discord.Interaction, slot_name, current_page):
-    await minion_slot_view_logic(interaction, slot_name=slot_name, current_page=current_page)
-
-
-@bot.event
-async def on_ready():
-    try:
-        global update_task
-        print(f'{bot.user} has connected to Discord!')
-        update_task = asyncio.create_task(update_db_loop())
-    except Exception as e:
-        print(f"Bot ran into an unexpected error during sync: {e}")
-
-bot.run(TOKEN)
