@@ -70,8 +70,8 @@ async def shop_pet_callback(interaction: discord.Interaction):
     await shop_pet_logic(interaction)
 
 async def pet_menu_callback(interaction: discord.Interaction):
-    from logic import pet_menu
-    await pet_menu(interaction)
+    from logic import pet_menu_logic
+    await pet_menu_logic(interaction)
 
 async def shop_minion_callback(interaction: discord.Interaction, current_page):
     from logic import shop_minion_logic

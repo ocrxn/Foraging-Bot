@@ -779,14 +779,21 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
 
     if minion == "None":
         embed = discord.Embed(
-            title=f"Empty Slot: {slot_name}",
-            description=f"Page: {current_page['index']+1}\nNo minion is placed here.\nWould you like to purchase one?",
+            title=f"Minion Slot {slot_name}: Empty",
+            description=f"No minion is placed here.\nWould you like to purchase one?",
             color=discord.Color.dark_red()
         )
-        view = create_view([[
-            {"label": "Purchase Minion", "style": discord.ButtonStyle.green, "emoji": "🛒", "callback": profile_button_callback},
-            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}
-        ]])
+        view = create_view([
+            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "callback": profile_button_callback},
+            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "callback": profile_button_callback},
+            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "callback": profile_button_callback}],
+
+            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "callback": profile_button_callback},
+            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "callback": profile_button_callback},
+            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "callback": profile_button_callback}],
+
+            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}]
+        ])
         await interaction.response.edit_message(embed=embed, view=view)
     else:
         embed = discord.Embed(
@@ -843,6 +850,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         result['pets_inv'][item_name] = {'pet_level': 0, 'pet_xp': 0}
         result['Pet_Type'] = item_name
         result["balance"] -= cost
+        await interaction.edit_original_response(content=f"**You purchased {pets[item_name]} {item_name} for {cost}!**")
 
     elif item_type == "Minion_Type":
         current_slots = len(result["minions"])
@@ -879,7 +887,8 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         ])
         await interaction.edit_original_response(embed=shop_embed, view=view, content=f"✅ Slot unlocked! Total slots: {len(result['minions'])}")
     
-    
+    elif item_type == "buy_minion":
+        pass
     elif item_type == "Axe_Type" or item_type == "Armor_Type":
         cost = item_info["cost"]
         required_current = item_info["required_current"]
