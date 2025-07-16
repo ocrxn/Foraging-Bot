@@ -21,20 +21,12 @@ from dotenv import load_dotenv
 import mysql.connector
 from mysql.connector import Error
 
-load_dotenv()
-HOST = os.getenv('host_token')
-USER = os.getenv('user_token')
-PASSWORD = os.getenv('password_token')
-DATABASE = os.getenv('database_token')
-TOKEN = os.getenv('my_token')
-GUILD = os.getenv('my_guild')
-TRUNCATE = os.getenv('truncate_token')
-
+from config import *
 from bot_instance import bot
 
 
 def connect_db():
-        return mysql.connector.connect(host=HOST,user=USER,password=PASSWORD,database=DATABASE)
+        return mysql.connector.connect(host=HOST,user=USER,password=PASSWORD,database=DATABASE, port=PORT)
 
 async def retrieve(interaction):
     try:
