@@ -1,35 +1,19 @@
-import ast
-import asyncio
-import json
-import math
-import os
-import random
-import signal
-import sys
-import threading
-import time
-from collections import defaultdict
+from bot_instance import bot
+from config import *
 from datetime import datetime
-from functools import partial
-
+from db import dirty_users,buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
 import discord
 from discord import app_commands
 from discord.ext import commands
 from discord.ui import Button, View
-from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector import Error
-
-from config import *
-
-import items_map
 from emoji_map import armor, axes, minions, pets, wood, wood_id
-
-from bot_instance import bot
-
+import items_map
+import json
+import math
 import psycopg2
 from psycopg2 import Error
-from db import dirty_users,buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
+import random
+
 
 from ui_helpers import (
     vote_button_callback,

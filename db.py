@@ -1,14 +1,10 @@
-
 import asyncio
-import json
-from datetime import datetime
-
-from config import *
 from bot_instance import bot
-
+from config import *
+from datetime import datetime
+import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-
 
 def connect_db():
         return psycopg2.connect(DB_URL)

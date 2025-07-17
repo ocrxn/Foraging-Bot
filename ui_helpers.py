@@ -1,33 +1,5 @@
-import ast
-import asyncio
-import json
-import math
-import os
-import random
-import signal
-import sys
-import threading
-import time
-from collections import defaultdict
-from datetime import datetime
-from functools import partial
-
-import discord
-from discord import app_commands
-from discord.ext import commands
-from discord.ui import Button, View
-from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector import Error
-
-import items_map
-from emoji_map import armor, axes, minions, pets, wood, wood_id
-
-from db import buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
-
-
 from config import *
-
+import discord
 
 async def vote_button_callback(interaction: discord.Interaction):
     from logic import vote_logic

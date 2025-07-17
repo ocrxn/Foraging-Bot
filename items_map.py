@@ -1,5 +1,5 @@
 ITEMS = {
-    'Axe_Type': {
+    'axe_type': {
         'wooden_axe': {
             'required_current': 'None',
             'next_tier': 'stone_axe',
@@ -45,7 +45,7 @@ ITEMS = {
     },
 
 
-    'Armor_Type': {
+    'armor_type': {
         'leather_armor': {
             'required_current': 'None',
             'next_tier': 'chainmail_armor',
@@ -84,7 +84,7 @@ ITEMS = {
     },
 
 ################-----PETS-----###############
-    'Pet_Type': {
+    'pet_type': {
         'Squirrel': {
             'tier': 'COMMON',
             'cost': 100,

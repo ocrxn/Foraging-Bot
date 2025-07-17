@@ -1,18 +1,6 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
-from discord.ui import Button, View
-from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector import Error
-
-import items_map
-from emoji_map import armor, axes, minions, pets, wood, wood_id
-
-from db import buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
-
 from config import *
-
+import discord
+from discord.ui import Button, View
 
 
 def create_view(button_configs):

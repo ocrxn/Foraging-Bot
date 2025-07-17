@@ -1,4 +1,4 @@
 .env
+dev_notes
 *.pyc
 __pycache__
-dev_notes
