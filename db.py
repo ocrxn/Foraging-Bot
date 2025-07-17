@@ -1,38 +1,23 @@
 
-import ast
 import asyncio
 import json
-import math
-import os
-import random
-import signal
-import sys
-import threading
-import time
-from collections import defaultdict
 from datetime import datetime
-from functools import partial
-
-import discord
-from discord import app_commands
-from discord.ext import commands
-from discord.ui import Button, View
-from dotenv import load_dotenv
-import mysql.connector
-from mysql.connector import Error
 
 from config import *
 from bot_instance import bot
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 
 def connect_db():
-        return mysql.connector.connect(host=HOST,user=USER,password=PASSWORD,database=DATABASE, port=PORT)
+        return psycopg2.connect(DB_URL)
 
 async def retrieve(interaction):
     try:
         conn = connect_db()
-        exe = conn.cursor(dictionary=True)
-        exe.execute("SELECT * FROM forager.stats WHERE dc_id=%s", (interaction.user.id,))
+        exe = conn.cursor(cursor_factory=RealDictCursor)
+        exe.execute("SELECT * FROM stats WHERE dc_id=%s", (interaction.user.id,))
         result = exe.fetchone()
         if result:
             pets_inv_raw = result['pets_inv']
@@ -41,8 +26,10 @@ async def retrieve(interaction):
             else:
                 result['pets_inv'] = json.loads(pets_inv_raw)
         return result
-    except mysql.connector.Error as error:
+    except psycopg2.Error as error:
         await interaction.followup.send(f"An error occurred while retrieving data: {error}")
+    except Exception as e:
+        await interaction.followup.send(f"Exception has occurred: {e}")
     finally:
         exe.close()
         conn.close()
@@ -51,7 +38,7 @@ async def retrieve(interaction):
 buffer_db = {}
 dirty_users = set()
 async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
-                     Axe_Type="None", Armor_Type="None", Pet_Type="None", logs=0,acacia=0,birch=0,dark_oak=0,
+                     axe_type="None", armor_type="None", pet_type="None", logs=0,acacia=0,birch=0,dark_oak=0,
                      jungle=0,oak=0,spruce=0,total_logs=0,total_acacia=0,total_birch=0,total_dark_oak=0,total_jungle=0,total_oak=0,total_spruce=0):
     try:
         result = await retrieve(interaction)
@@ -61,9 +48,9 @@ async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
                 "game_level": result["game_level"],
                 "xp": result['xp'],
                 "balance": int(result["balance"]),
-                "Axe_Type": result["Axe_Type"],
-                "Armor_Type": result["Armor_Type"],
-                "Pet_Type": result["Pet_Type"],
+                "axe_type": result.get("axe_type", "None"),
+                "armor_type": result.get("armor_type", "None"),
+                "pet_type": result.get("pet_type", "None"),
                 "pets_inv": json.loads(result['pets_inv']) if isinstance(result['pets_inv'], str) else (result['pets_inv'] or {}),
                 "minions": json.loads(result['minions']) if isinstance(result['minions'], str) else (result['minions'] or {}),
                 "logs": result["logs"],
@@ -87,9 +74,9 @@ async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
                 "game_level": game_level,
                 "xp": xp,
                 "balance": balance,
-                "Axe_Type": Axe_Type,
-                "Armor_Type": Armor_Type,
-                "Pet_Type": Pet_Type,
+                "axe_type": axe_type,
+                "armor_type": armor_type,
+                "pet_type": pet_type,
                 "pets_inv": {},
                 "minions": {},
                 "logs": logs,
@@ -107,22 +94,22 @@ async def create_temp_user(interaction, game_level=0, xp=0,balance=0,
                 "total_oak": total_oak,
                 "total_spruce": total_spruce
         }
-    except Error:
-        print(f"Error while creating temp user: {Error}")
+    except Exception as error:
+        print(f"Error while creating temp user: {error}")
 
 
 update_task = None
 stop_event = asyncio.Event()
 
 async def update_db_loop():
-    buffer_query = """UPDATE forager.stats SET
+    buffer_query = """UPDATE stats SET
                 dc_id = %(dc_id)s,
                 game_level = %(game_level)s,
                 xp = %(xp)s,
                 balance = %(balance)s,
-                Axe_Type = %(Axe_Type)s,
-                Armor_Type = %(Armor_Type)s,
-                Pet_Type = %(Pet_Type)s,
+                axe_type = %(axe_type)s,
+                armor_type = %(armor_type)s,
+                pet_type = %(pet_type)s,
                 pets_inv = %(pets_inv)s,
                 minions = %(minions)s,
                 logs = %(logs)s,

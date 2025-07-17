@@ -27,6 +27,8 @@ from emoji_map import armor, axes, minions, pets, wood, wood_id
 
 from bot_instance import bot
 
+import psycopg2
+from psycopg2 import Error
 from db import dirty_users,buffer_db,connect_db,retrieve,create_temp_user,update_db_loop,shutdown
 
 from ui_helpers import (
@@ -46,7 +48,6 @@ from ui_helpers import (
 )
 
 from view import create_view
-
 
 
 @commands.has_role("Owner")
@@ -72,23 +73,23 @@ async def truncate(interaction: discord.Interaction, confirm: str, token: str):
     if confirm != "TRUNCATE":
         await interaction.response.send_message("❌ Cancelled: You must type `TRUNCATE` exactly to proceed.", ephemeral=True, delete_after=15)
         return
-    if token != TOKEN:
+    if token != TRUNCATE:
         await interaction.response.send_message("❌ Cancelled: **AUTHORIZATION TOKEN INVALID**.", ephemeral=True, delete_after=15)
         return
 
     try:
         conn = connect_db()
         exe = conn.cursor()
-        exe.execute("SELECT COUNT(*) FROM forager.stats;")
+        exe.execute("SELECT COUNT(*) FROM stats;")
         count = exe.fetchone()[0]
 
-        exe.execute("TRUNCATE forager.stats;")
+        exe.execute("TRUNCATE stats RESTART IDENTITY;")
         conn.commit()
 
-        await interaction.response.send_message(f"✅ Successfully truncated `forager.stats`. {count} records deleted.")
+        await interaction.response.send_message(f"✅ Successfully truncated `stats`. {count} records deleted.")
 
-    except mysql.connector.Error as error:
-        await interaction.response.send_message(f"❌ An error occurred while truncating the database:\n```{error}```",ephemeral=True)
+    except psycopg2.Error as error:
+        await interaction.response.send_message(f"❌ An error occurred while truncating the database:\n```{error}```",ephemeral=False)
     finally:
         exe.close()
         conn.close()
@@ -98,19 +99,19 @@ async def create_acc(interaction: discord.Interaction):
     try:
         conn = connect_db()
         exe = conn.cursor()
-        exe.execute("SELECT * FROM forager.stats WHERE dc_id=%s", (interaction.user.id,))
+        exe.execute("SELECT * FROM stats WHERE dc_id=%s", (interaction.user.id,))
         result = exe.fetchone()
 
         if not result:
             await interaction.response.defer(thinking=True)
-            init_query = """INSERT INTO forager.stats (dc_id, dc_username, game_level, xp, balance, Axe_Type, Armor_Type, Pet_Type)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"""
-            exe.execute(init_query, (interaction.user.id, interaction.user.name, 0, 0, 0, 'None', 'None', 'None'))
-            conn.commit()  
-            await interaction.followup.send(content="Account created successfully.",ephemeral=True)
+            init_query = """INSERT INTO stats (dc_id, dc_username, xp, balance, axe_type, armor_type, pet_type)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)"""
+            exe.execute(init_query, (interaction.user.id, interaction.user.name, 0, 0, 'None', 'None', 'None'))
+            conn.commit()
+            await interaction.followup.send(content=f"{interaction.user.mention} ✅ Account created successfully.",ephemeral=True)
         else:
             await interaction.response.send_message("User already exists.",ephemeral=True)     
-    except mysql.connector.Error as error:
+    except psycopg2.Error as error:
         await interaction.followup.send(f"An error occurred while creating your account: {error}")
     finally:
         exe.close()
@@ -128,10 +129,8 @@ async def bug_report(interaction: discord.Interaction, message:str):
 
 
 async def vote_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
         
     if not result:
         await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
@@ -160,31 +159,30 @@ async def vote(interaction: discord.Interaction):
 
 
 async def leaderboard_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
         
     if not result:
         await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-    else:
-        lb_embed = discord.Embed(
-            title="Foraging Bot Leaderboard",
-            description=f"""
+        return
+    
+    lb_embed = discord.Embed(
+        title="Foraging Bot Leaderboard",
+        description=f"""
 Coming Soon!
 **[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
-            timestamp=datetime.now()
-        )
+        timestamp=datetime.now()
+    )
 
-        view = create_view([
-    {"label": "Leaderboard 1", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
-    {"label": "Leaderboard 2", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
-    {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
-    {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
-    {"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
+    view = create_view([
+{"label": "Leaderboard 1", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
+{"label": "Leaderboard 2", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
+{"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
+{"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
+{"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
 ])
-        lb_embed.set_author(name=interaction.user)
-        await interaction.response.send_message(embed=lb_embed, view=view, ephemeral=True,delete_after=6)
+    lb_embed.set_author(name=interaction.user)
+    await interaction.response.send_message(embed=lb_embed, view=view, ephemeral=True,delete_after=30)
 
 @bot.tree.command(name='leaderboard',description="View Top Foragers!")
 async def leaderboard(interaction: discord.Interaction):
@@ -213,28 +211,28 @@ async def check_level_up(current_level, current_xp, base_xp=100, growth_rate=1.3
 
 async def forage_logic(interaction: discord.Interaction, callback: None):
     user_id = interaction.user.id
-
     if not user_id in buffer_db:
         result = await retrieve(interaction)
         if not result:
             await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
             return
         await create_temp_user(interaction)
+        
     user_data = buffer_db[user_id]
     log_types = ['acacia', 'birch', 'dark_oak', 'oak', 'jungle', 'spruce']
     log_picked = random.choice(log_types)
     logs_broken = random.randint(1, 10)
                        
-    if user_data['Axe_Type'] != 'None':
-         logs_broken *= math.floor(items_map.ITEMS['Axe_Type'][user_data['Axe_Type']]['power'] / 10)
+    if user_data['axe_type'] != 'None':
+         logs_broken *= math.floor(items_map.ITEMS['axe_type'][user_data['axe_type']]['power'] / 10)
     xp_gain = 75 * logs_broken if random.random() < 0.05 else random.randint(1, 5) * logs_broken
 
-    pet_type = buffer_db[user_id]['Pet_Type']
+    pet_type = buffer_db[user_id]['pet_type']
     pet_data = buffer_db[user_id]['pets_inv'].get(pet_type)
 
     if pet_data:
         pet_level = pet_data.get('pet_level', 0)
-        xp_gain *= round(items_map.ITEMS['Pet_Type'][pet_type]['xp_boost'] * (1.05 + ((pet_level - 1) / 100) * (5.0 - 1.05)))
+        xp_gain *= round(items_map.ITEMS['pet_type'][pet_type]['xp_boost'] * (1.05 + ((pet_level - 1) / 100) * (5.0 - 1.05)))
 
     user_data["logs"] += logs_broken
     user_data["total_logs"] += logs_broken
@@ -249,14 +247,14 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     user_data['xp'] = remaining_xp
 
     #Apply xp to current pet + check if pet levels up
-    if user_data['Pet_Type'] != 'None':
-        user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'] += xp_gain
+    if user_data['pet_type'] != 'None':
+        user_data['pets_inv'][user_data['pet_type']]['pet_xp'] += xp_gain
 
         new_pet_level, remaining_pet_xp, pet_xp_to_next, pet_leveled_up = await check_level_up(
-            user_data['pets_inv'][user_data['Pet_Type']]['pet_level'], user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'])
+            user_data['pets_inv'][user_data['pet_type']]['pet_level'], user_data['pets_inv'][user_data['pet_type']]['pet_xp'])
         
-        user_data['pets_inv'][user_data['Pet_Type']]['pet_level'] = new_pet_level
-        user_data['pets_inv'][user_data['Pet_Type']]['pet_xp'] = remaining_pet_xp
+        user_data['pets_inv'][user_data['pet_type']]['pet_level'] = new_pet_level
+        user_data['pets_inv'][user_data['pet_type']]['pet_xp'] = remaining_pet_xp
 
     if leveled_up:
         user_data['balance'] += 100 * user_data['game_level']
@@ -267,7 +265,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
         description=(
             f"You broke **{logs_broken} {'dark oak' if log_picked == 'dark_oak' else log_picked} {'logs' if logs_broken>1 else 'log'}** and gained **{xp_gain} XP**!\n"
             f"{f'🎉 **You leveled up to level {user_data['game_level']}!** 🎉\nYou received **{100*user_data['game_level']}** coins!\n' if leveled_up else ''}"
-            f"{f'🎉 **Your {user_data['Pet_Type']} leveled up to level {user_data['pets_inv'][user_data['Pet_Type']]['pet_level']}!** 🎉\n' if user_data['Pet_Type'] != 'None' and pet_leveled_up else ''}"
+            f"{f'🎉 **Your {user_data['pet_type']} leveled up to level {user_data['pets_inv'][user_data['pet_type']]['pet_level']}!** 🎉\n' if user_data['pet_type'] != 'None' and pet_leveled_up else ''}"
             f"Level: {user_data['game_level']} | XP to level {user_data['game_level']+1}: [{user_data['xp']}/{xp_to_next}]"),
         color=0x00CC00,
         timestamp=datetime.now())
@@ -293,10 +291,8 @@ async def forage_command(interaction: discord.Interaction):
     await forage_logic(interaction, callback=None)
 
 async def profile_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
@@ -330,14 +326,13 @@ async def profile_command(interaction: discord.Interaction):
 
 async def log_totals_logic(interaction: discord.Interaction):
     await interaction.response.defer()
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
         return
+    
     def fmt_block(icon, name, current, total):
         return(f"{icon} **{name} Logs**: {str(current).rjust(5)}\n"
         f"🏆 **Total {name} Collected**: {str(total).rjust(5)}"
@@ -366,75 +361,72 @@ async def log_totals_logic(interaction: discord.Interaction):
     await interaction.edit_original_response(embed=totals_embed, view=view)
 
 async def shop_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
 
     if not result:
         await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
-    else:
-        shop_embed = discord.Embed(
-            title="Shop Menu",
-            description=f"""Items to purchase.
-1. Axe Upgrades (Current: {axes[result['Axe_Type']] if result['Axe_Type'] != 'None' else ''}**{result["Axe_Type"]}**)
-2. Armor Upgrades (Current: {armor[result['Armor_Type']] if result['Armor_Type'] != 'None' else ''}**{result["Armor_Type"]}**)
-3. Pet Upgrades (Current: {'None' if result['Pet_Type'] == 'None' else f'{pets[result['Pet_Type']]} **{result['Pet_Type']}**'})
+        return
+    
+    shop_embed = discord.Embed(
+        title="Shop Menu",
+        description=f"""Items to purchase.
+1. Axe Upgrades (Current: {axes[result['axe_type']] if result['axe_type'] != 'None' else ''}**{result["axe_type"]}**)
+2. Armor Upgrades (Current: {armor[result['armor_type']] if result['armor_type'] != 'None' else ''}**{result["armor_type"]}**)
+3. Pet Upgrades (Current: {'None' if result['pet_type'] == 'None' else f'{pets[result['pet_type']]} **{result['pet_type']}**'})
 4. Minion Upgrades (Current: **NONE**)
 P.S. Voting gives you a temporary 2x wood multiplier
-            """,
-        timestamp=datetime.now()
-        )
-        shop_embed.set_author(name=interaction.user)
-        row1 = [
-            {"label": "Axes", "style": discord.ButtonStyle.blurple, "emoji": f"{axes['diamond_axe']}", "callback": shop_axe_callback},
-            {"label": "Armor", "style": discord.ButtonStyle.blurple, "emoji": f"{armor['diamond_armor']}", "callback": shop_armor_callback},
-            {"label": "Pets", "style": discord.ButtonStyle.blurple, "emoji": pets.get(result.get("Pet_Type"), "📄"), "callback": shop_pet_callback},
-            {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak_I']}", "callback": shop_minion_callback, "args": [{"index": 0}]}
-        ]
-        row2=[
-            {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
-            {"label": "Sell Items", "style": discord.ButtonStyle.danger, "emoji": "📄", "callback": sell_inventory_callback},
-            {"label": "Inventory", "style": discord.ButtonStyle.secondary, "emoji": "💼", "callback": shop_inventory_callback},
-            {"label": "Profile", "style": discord.ButtonStyle.secondary, "emoji": "📄", "callback": profile_button_callback}
-        ]
-        rows = [row1,row2]
-        view = create_view(rows)
-        await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
+        """,
+    timestamp=datetime.now()
+    )
+    shop_embed.set_author(name=interaction.user)
+    row1 = [
+        {"label": "Axes", "style": discord.ButtonStyle.blurple, "emoji": f"{axes['diamond_axe']}", "callback": shop_axe_callback},
+        {"label": "Armor", "style": discord.ButtonStyle.blurple, "emoji": f"{armor['diamond_armor']}", "callback": shop_armor_callback},
+        {"label": "Pets", "style": discord.ButtonStyle.blurple, "emoji": pets.get(result.get("pet_type"), "📄"), "callback": shop_pet_callback},
+        {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak_I']}", "callback": shop_minion_callback, "args": [{"index": 0}]}
+    ]
+    row2=[
+        {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
+        {"label": "Sell Items", "style": discord.ButtonStyle.danger, "emoji": "📄", "callback": sell_inventory_callback},
+        {"label": "Inventory", "style": discord.ButtonStyle.secondary, "emoji": "💼", "callback": shop_inventory_callback},
+        {"label": "Profile", "style": discord.ButtonStyle.secondary, "emoji": "📄", "callback": profile_button_callback}
+    ]
+    rows = [row1,row2]
+    view = create_view(rows)
+    await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
 @bot.tree.command(name='shop', description='Open Shop Menu')
 async def shop_command(interaction: discord.Interaction):
     await shop_logic(interaction)
 
 async def shop_inventory_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-    else:
-        shop_embed = discord.Embed(
-            title="Inventory Menu",
-            description=f"""
+        return
+    
+    shop_embed = discord.Embed(
+        title="Inventory Menu",
+        description=f"""
 1. Upgrade Inventory
 P.S. Voting gives you a temporary 2x wood multiplier
-            """,
-        timestamp=datetime.now()
-        )
+        """,
+    timestamp=datetime.now()
+    )
 
-        view = create_view([
-    {"label": "Upgrade Inventory", "style": discord.ButtonStyle.gray, "emoji": "⬆️", "callback": shop_button_callback},        
-    {"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
+    view = create_view([
+{"label": "Upgrade Inventory", "style": discord.ButtonStyle.gray, "emoji": "⬆️", "callback": shop_button_callback},        
+{"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
-        await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
+    await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
 async def sell_inventory_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+
     lines = [
     (f'1. {wood['logs']} Sell All', result['logs']),
     (f'2. {wood['acacia']} Sell Acacia', result['acacia']),
@@ -473,21 +465,20 @@ async def sell_command(interaction: discord.Interaction):
     await sell_inventory_logic(interaction)
 
 async def shop_axe_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
-    item_label = items_map.ITEMS['Axe_Type']
+    
+    item_label = items_map.ITEMS['axe_type']
 
     max_name_width = max(len(f"{axes[axe]} {axe.replace('_', ' ').title()}") for axe in axes.keys())
 
     shop_embed = discord.Embed(
         title="Purchase Axes",
-        description=f"""Current Axe: **{result["Axe_Type"].replace('_',' ').title()}**
+        description=f"""Current Axe: **{result["axe_type"].replace('_',' ').title()}**
 1. {axes['wooden_axe']} **Wooden Axe**{' ' * (max_name_width - len(f'{axes['wooden_axe']} Wooden Axe'))}   • Price: ${item_label['wooden_axe']['cost']:,} {f'⚡Power: {item_label['wooden_axe']['power']/10}':>30}
 2. {axes['stone_axe']} **Stone Axe**{' ' * (max_name_width - len(f'{axes['stone_axe']} Stone Axe'))}   • Price: ${item_label['stone_axe']['cost']:,} {f'⚡Power: {item_label['stone_axe']['power']/10}':>30}
 3. {axes['iron_axe']} **Iron Axe**{' ' * (max_name_width - len(f'{axes['iron_axe']} Iron Axe'))}   • Price: ${item_label['iron_axe']['cost']:,} {f'⚡Power: {item_label['iron_axe']['power']/10}':>28}
@@ -501,27 +492,26 @@ P.S. Voting gives you a temporary 2x wood multiplier
     )
 
     view = create_view([                             
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['wooden_axe']}", "item_type": "Axe_Type", "item_name": "wooden_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['stone_axe']}", "item_type": "Axe_Type", "item_name": "stone_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['iron_axe']}", "item_type": "Axe_Type", "item_name": "iron_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['gold_axe']}", "item_type": "Axe_Type", "item_name": "gold_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['diamond_axe']}", "item_type": "Axe_Type", "item_name": "diamond_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['netherite_axe']}", "item_type": "Axe_Type", "item_name": "netherite_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['mythic_axe']}", "item_type": "Axe_Type", "item_name": "mythic_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['wooden_axe']}", "item_type": "axe_type", "item_name": "wooden_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['stone_axe']}", "item_type": "axe_type", "item_name": "stone_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['iron_axe']}", "item_type": "axe_type", "item_name": "iron_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['gold_axe']}", "item_type": "axe_type", "item_name": "gold_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['diamond_axe']}", "item_type": "axe_type", "item_name": "diamond_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['netherite_axe']}", "item_type": "axe_type", "item_name": "netherite_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['mythic_axe']}", "item_type": "axe_type", "item_name": "mythic_axe"},
 {"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
 async def shop_armor_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
-    price_label = items_map.ITEMS['Armor_Type']
+    
+    price_label = items_map.ITEMS['armor_type']
     shop_embed = discord.Embed(
         title="Purchase Armor",
         description=f"""Items to purchase.
@@ -538,30 +528,28 @@ P.S. Voting gives you a temporary 2x wood multiplier
     )
 
     view = create_view([
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['leather_armor']}", "item_type": "Armor_Type", "item_name": "leather_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['chainmail_armor']}", "item_type": "Armor_Type", "item_name": "chainmail_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['iron_armor']}", "item_type": "Armor_Type", "item_name": "iron_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['gold_armor']}", "item_type": "Armor_Type", "item_name": "gold_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['diamond_armor']}", "item_type": "Armor_Type", "item_name": "diamond_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['netherite_armor']}", "item_type": "Armor_Type", "item_name": "netherite_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['mythic_armor']}", "item_type": "Armor_Type", "item_name": "mythic_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['leather_armor']}", "item_type": "armor_type", "item_name": "leather_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['chainmail_armor']}", "item_type": "armor_type", "item_name": "chainmail_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['iron_armor']}", "item_type": "armor_type", "item_name": "iron_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['gold_armor']}", "item_type": "armor_type", "item_name": "gold_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['diamond_armor']}", "item_type": "armor_type", "item_name": "diamond_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['netherite_armor']}", "item_type": "armor_type", "item_name": "netherite_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['mythic_armor']}", "item_type": "armor_type", "item_name": "mythic_armor"},
 {"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
 
 async def shop_pet_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-    else:
-        result = await retrieve(interaction)
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.", ephemeral=True, delete_after=15)
         return
     
     tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
-    items_dict = items_map.ITEMS["Pet_Type"]
+    items_dict = items_map.ITEMS["pet_type"]
     current_page = 0
 
     def make_embed(page):
@@ -587,7 +575,7 @@ async def shop_pet_logic(interaction: discord.Interaction):
                 "label": f"Buy {pet_name}",
                 "style": discord.ButtonStyle.blurple,
                 "emoji": f"{pets[pet_name]}",
-                "item_type": 'Pet_Type',
+                "item_type": 'pet_type',
                 "item_name": pet_name
             })
         rows = [row1]
@@ -620,13 +608,11 @@ async def shop_pet_logic(interaction: discord.Interaction):
 
 
 async def pet_menu_logic(interaction: discord.Interaction):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
-        
-    else:
-        result = await retrieve(interaction)
-        if isinstance(result.get('pets_inv'), str):
-            result['pets_inv'] = json.loads(result['pets_inv'])
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+
+    if isinstance(result.get('pets_inv'), str):
+        result['pets_inv'] = json.loads(result['pets_inv'])
 
     if not result:
         await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
@@ -638,8 +624,8 @@ async def pet_menu_logic(interaction: discord.Interaction):
       
     shop_embed = discord.Embed(
         title="Your Owned Pets",
-        description="**No owned pets.** Purchase a pet add it to your collection." if result['Pet_Type'] == 'None' else f"""
-    **Current Pet: {pets[result['Pet_Type']]} [Lvl {result['pets_inv'][result['Pet_Type']]['pet_level']}] {result['Pet_Type']}**
+        description="**No owned pets.** Purchase a pet add it to your collection." if result['pet_type'] == 'None' else f"""
+    **Current Pet: {pets[result['pet_type']]} [Lvl {result['pets_inv'][result['pet_type']]['pet_level']}] {result['pet_type']}**
     **{pet_lines}**
     P.S. Voting gives you a temporary 2x wood multiplier
         """,
@@ -653,13 +639,12 @@ async def pet_menu_logic(interaction: discord.Interaction):
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
 
 async def pet_autocomplete_logic(interaction: discord.Interaction, current: str):
-    if interaction.user.id in buffer_db:
-        result = buffer_db[interaction.user.id]
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+
+    if isinstance(result.get('pets_inv'), str):
+        result['pets_inv'] = json.loads(result['pets_inv'])
         
-    else:
-        result = await retrieve(interaction)
-        if isinstance(result.get('pets_inv'), str):
-            result['pets_inv'] = json.loads(result['pets_inv'])
     return [
         app_commands.Choice(name=name, value=name)
         for name in result['pets_inv'].keys()
@@ -671,12 +656,13 @@ async def equip_pet_logic(interaction: discord.Interaction, pet_name: str):
     else:
         result = await retrieve(interaction)
         await create_temp_user(interaction)
+
     if pet_name in result['pets_inv'].keys():
-        buffer_db[interaction.user.id]['Pet_Type'] = pet_name
+        buffer_db[interaction.user.id]['pet_type'] = pet_name
         dirty_users.add(interaction.user.id)
 
         await interaction.response.send_message(
-            content=f"You equipped {pets.get(pet_name, pet_name)} [Lvl {result['pets_inv'][result['Pet_Type']]['pet_level']}] {pet_name}!", ephemeral=True)
+            content=f"You equipped {pets.get(pet_name, pet_name)} [Lvl {result['pets_inv'][result['pet_type']]['pet_level']}] {pet_name}!", ephemeral=True)
     else:
         await interaction.response.send_message(
             content=f"Something went wrong.", ephemeral=True)
@@ -784,7 +770,7 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
             color=discord.Color.dark_red()
         )
         view = create_view([
-            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "callback": profile_button_callback},
+            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "item_type": "Minion_Type", "item_name": 'Acacia I', "current_page": current_page},
             {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "callback": profile_button_callback},
             {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "callback": profile_button_callback}],
 
@@ -824,7 +810,7 @@ async def is_downgrade(interaction, result, item_type, item_name):
     
     return player_index > item_index
 
-async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str):
+async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=1):
     await interaction.response.defer()
     if interaction.user.id not in buffer_db:
         await create_temp_user(interaction)
@@ -833,13 +819,14 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
     if not result:
         await interaction.followup.send("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
         return
+    
     item_info = items_map.ITEMS.get(item_type, {}).get(item_name)
 
     if not item_info:
         await interaction.followup.send("This item doesn't exist.", ephemeral=True)
         return
 
-    if item_type == "Pet_Type":
+    if item_type == "pet_type":
         cost = item_info["cost"]
         if item_name in buffer_db[interaction.user.id]['pets_inv']:
             await interaction.edit_original_response(content=f"You already own this pet.")
@@ -848,11 +835,15 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
             await interaction.edit_original_response(content=f"❌ Not enough coins! You need {cost:,}.")
             return
         result['pets_inv'][item_name] = {'pet_level': 0, 'pet_xp': 0}
-        result['Pet_Type'] = item_name
+        result['pet_type'] = item_name
         result["balance"] -= cost
         await interaction.edit_original_response(content=f"**You purchased {pets[item_name]} {item_name} for {cost}!**")
 
-    elif item_type == "Minion_Type":
+    elif item_type == "Minion_Type" and item_name == "slot_costs":
+
+        if isinstance(result.get('minions'), str):
+            result['minions'] = json.loads(result['minions'])
+        
         current_slots = len(result["minions"])
         cost_list = item_info
 
@@ -887,9 +878,29 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         ])
         await interaction.edit_original_response(embed=shop_embed, view=view, content=f"✅ Slot unlocked! Total slots: {len(result['minions'])}")
     
-    elif item_type == "buy_minion":
-        pass
-    elif item_type == "Axe_Type" or item_type == "Armor_Type":
+    elif item_type == "Minion_Type":
+        if isinstance(result.get('minions'), str):
+            result['minions'] = json.loads(result['minions'])
+        
+        embed = discord.Embed(
+            title=f"Minion Slot {0}: Empty",
+            description=f"No minion is placed here.\nWould you like to purchase one?\n{current_page}",
+            color=discord.Color.dark_red()
+        )
+        view = create_view([
+            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "item_type": "Minion_Type", "item_name": 'Acacia I'},
+            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "callback": profile_button_callback},
+            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "callback": profile_button_callback}],
+
+            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "callback": profile_button_callback},
+            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "callback": profile_button_callback},
+            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "callback": profile_button_callback}],
+
+            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}]
+        ])
+        await interaction.edit_original_response(embed=embed, view=view)
+
+    elif item_type == "axe_type" or item_type == "armor_type":
         cost = item_info["cost"]
         required_current = item_info["required_current"]
         current_item = result[item_type]

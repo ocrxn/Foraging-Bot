@@ -1,17 +1,3 @@
-import ast
-import asyncio
-import json
-import math
-import os
-import random
-import signal
-import sys
-import threading
-import time
-from collections import defaultdict
-from datetime import datetime
-from functools import partial
-
 import discord
 from discord import app_commands
 from discord.ext import commands
