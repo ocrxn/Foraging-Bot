@@ -21,65 +21,49 @@ def create_view(button_configs):
 
     for row_index, row in enumerate(button_rows):
         for config in row:
-            # URL buttons
+            button_kwargs = {
+                'label': config.get('label'),
+                'style': config.get('style', discord.ButtonStyle.secondary),
+                'emoji': config.get('emoji'),
+                'disabled': config.get('disabled', False),
+                'row': row_index,
+            }
             if config.get('url'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.link),
-                    emoji=config.get('emoji'),
-                    url=config['url'],
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-            # Purchase buttons
-            elif config.get('item_type'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    custom_id = config.get('item_name') or None,
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-                async def callback(interaction, item_type=config['item_type'], item_name=config.get('item_name') or None):
-                    from logic import purchase_item,is_downgrade
-                    await purchase_item(interaction, item_type, item_name)
-                button.callback = callback
-            # Sell buttons
-            elif config.get('sell_type'):
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
+                button_kwargs["style"] = discord.ButtonStyle.link
+                button_kwargs["url"] = config.get('url')
+                button = Button(**button_kwargs)
+                
+            elif config.get('kwargs'):
+                button = Button(**button_kwargs)
+                kwargs = config.get('kwargs', {})
 
-                def make_sell_callback(sell_type):
-                    async def callback(interaction):
+                async def callback(interaction, kwargs=kwargs):
+                    from logic import purchase_item, sell_inventory
+
+                    if 'purchase' in kwargs or kwargs.get('item_type'):
+                        from logic import purchase_item
+                        await purchase_item(interaction, **kwargs)
+                    elif 'sell' in kwargs or 'sell_type' in kwargs:
                         from logic import sell_inventory
-                        await sell_inventory(interaction, sell_type)
-                    return callback
+                        await sell_inventory(interaction, **kwargs)
+                    else:
+                        await interaction.response.send_message("Action not recognized.", ephemeral=True)
 
-                button.callback = make_sell_callback(config.get('sell_type'))
+                button.callback = callback
+
             else:
-                def create_button_callback(callback, args):
+                button = Button(**button_kwargs)
+
+                def create_button_callback(callback, args=None,kwargs=None):
+                    args = args or []
+                    kwargs = kwargs or {}
+
                     async def cb(interaction):
-                        await callback(interaction, *args)
+                        await callback(interaction, *args, **kwargs)
+
                     return cb
                 
-                button = Button(
-                    label=config['label'],
-                    style=config.get('style', discord.ButtonStyle.secondary),
-                    emoji=config.get('emoji'),
-                    disabled=config.get('disabled', False),
-                    row=row_index
-                )
-                args = config.get('args', [])
-
-                button.callback = create_button_callback(config['callback'], config.get('args', []))
-
-                
+                button.callback = create_button_callback(config['callback'], config.get('args', []), config.get('kwargs', {}))           
 
             view.add_item(button)
 

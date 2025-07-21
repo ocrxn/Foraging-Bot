@@ -17,6 +17,7 @@ import random
 
 from ui_helpers import (
     vote_button_callback,
+    lb_button_callback,
     forage_button_callback,
     profile_button_callback,
     log_totals_callback,
@@ -112,6 +113,40 @@ async def bug_report(interaction: discord.Interaction, message:str):
     await bug_report_logic(interaction, message)
 
 
+async def help_logic(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+        
+    if not result:
+        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
+        return
+    commands = await bot.tree.fetch_commands()
+    command_list = "\n".join(f"``{i+1}. {cmd}``" for i, cmd in enumerate(commands))
+    help_embed = discord.Embed(
+        title="Welcome to Foraging Bot",
+        description=f"""
+``Available Commands``
+**{command_list}**
+**[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
+        timestamp=datetime.now(),
+        color=discord.Color.purple()
+    )
+    help_embed.set_author(name=interaction.user)
+    view = create_view([
+    {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
+    {"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
+    {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
+    {"label": "Vote", "emoji": "<a:Vote:1383117707519459418>", "url": "https://www.top.gg/"}
+
+])
+    
+    await interaction.response.send_message(embed=help_embed, view=view, ephemeral=True,delete_after=20)
+
+@bot.tree.command(name='help',description="Get a list of available commands.")
+async def help(interaction: discord.Interaction):
+    await help_logic(interaction)
+
+
 async def vote_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
@@ -142,35 +177,71 @@ async def vote(interaction: discord.Interaction):
     await vote_logic(interaction)
 
 
-async def leaderboard_logic(interaction: discord.Interaction):
+from datetime import datetime
+import discord
+from discord.ui import View, Button
+
+from datetime import datetime
+import discord
+
+async def leaderboard_logic(interaction: discord.Interaction, callback: None, page=1):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
-        
+
     if not result:
-        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
+        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True, delete_after=15)
         return
+    top_10 = ""
+    if page == 1:
+        get_query = "SELECT dc_username FROM stats ORDER BY game_level DESC, xp DESC LIMIT 10;"
+        sort = "Level"
+    elif page == 2:
+        get_query = """SELECT dc_username FROM stats ORDER BY balance DESC LIMIT 10;"""
+        sort = "Balance"
+    else:
+        get_query = """SELECT dc_username FROM stats ORDER BY logs DESC LIMIT 10;"""
+        sort = "Total Logs Collected"
+    conn = connect_db()
+    exe = conn.cursor()
+    exe.execute(get_query)
+    top = exe.fetchall()
+    exe.close()
+    conn.close()
+    top_10 = ""
+    for i, user in enumerate(top, start=1):
+        username = user[0]  # Extract the string from the tuple
+        top_10 += f"**{i}.** {username}\n"
     
-    lb_embed = discord.Embed(
-        title="Foraging Bot Leaderboard",
-        description=f"""
-Coming Soon!
-**[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
+    lb_embed= discord.Embed(
+        title=f"🏆 Foraging Bot Leaderboard",
+        description=f"""Top 10 by {sort}
+        {top_10}
+        **[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
         timestamp=datetime.now()
-    )
+        )
+    lb_embed.set_author(name=interaction.user)
 
     view = create_view([
-{"label": "Leaderboard 1", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
-{"label": "Leaderboard 2", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_button_callback, 'disabled': True},
-{"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
-{"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
-{"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
-])
-    lb_embed.set_author(name=interaction.user)
-    await interaction.response.send_message(embed=lb_embed, view=view, ephemeral=True,delete_after=30)
+            {"label": "Leaderboard - Game Level","style": discord.ButtonStyle.green,"emoji": "🏆","callback": lb_button_callback, "disabled": page == 1, "kwargs": {'page': 1}},
+            {"label": "Leaderboard - Balance","style": discord.ButtonStyle.green,"emoji": "🏆","callback": lb_button_callback, "disabled": page == 2, "kwargs": {'page':2}},
+            {"label": "Leaderboard - Logs Collected","style": discord.ButtonStyle.green,"emoji": "🏆","callback": lb_button_callback, "disabled": page == 3, "kwargs": {'page':3}},
+            {"label": "Chop Tree","style": discord.ButtonStyle.green,"emoji": "🌳","callback": forage_button_callback},
+            {"label": "Profile Stats","style": discord.ButtonStyle.blurple,"emoji": "📄","callback": profile_button_callback},
+            {"label": "Shop","style": discord.ButtonStyle.gray,"emoji": "🛒","callback": shop_button_callback}
+        ])
+
+    if callback is None:
+        await interaction.response.send_message(embed=lb_embed, view=view, ephemeral=True, delete_after=30)
+    else:
+        await interaction.response.defer()
+        await interaction.edit_original_response(embed=lb_embed, view=view)
+
+
+    
 
 @bot.tree.command(name='leaderboard',description="View Top Foragers!")
 async def leaderboard(interaction: discord.Interaction):
-    await leaderboard_logic(interaction)
+    await leaderboard_logic(interaction, callback=None)
 
 def xp_for_level(level, base_xp=100, growth_rate=1.3):
     """Calculate XP required to advance FROM this level to the next"""
@@ -274,7 +345,7 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
 async def forage_command(interaction: discord.Interaction):
     await forage_logic(interaction, callback=None)
 
-async def profile_logic(interaction: discord.Interaction):
+async def profile_logic(interaction: discord.Interaction, callback: None):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
@@ -285,7 +356,7 @@ async def profile_logic(interaction: discord.Interaction):
         result['game_level'], result['xp'])
     
     profile_embed = discord.Embed(
-        title="👤 Profile Stats",
+        title="**Profile Stats**",
         description=f"""
 **Purse**: ${result['balance']:,}\n**Bank**: Coming Soon!
 Current level: **{result['game_level']}** | Next Level: **{result['xp']}/{xp_to_next}**
@@ -294,25 +365,31 @@ Current level: **{result['game_level']}** | Next Level: **{result['xp']}/{xp_to_
         timestamp=datetime.now()
     )
     profile_embed.set_author(name=interaction.user)
+    profile_embed.set_thumbnail(url=interaction.user.display_avatar)
 
     view = create_view([
-    {"label": "View Log Totals", "style": discord.ButtonStyle.blurple, "emoji": f"{wood['oak']}", "callback": log_totals_callback},
+    [{"label": "View Log Totals", "style": discord.ButtonStyle.blurple, "emoji": f"{wood['oak']}", "callback": log_totals_callback},
     {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
     {"label": "Shop", "style": discord.ButtonStyle.danger, "emoji": "🛒", "callback": shop_button_callback},
-    {"label": "Vote", "style": discord.ButtonStyle.danger, "emoji": "<a:Vote:1383117707519459418>", "callback": vote_button_callback},
-    {"label": "GitHub", "emoji": "<a:github:1387274840154701874>", "url": "https://github.com/ocrxn/Foraging-Bot"},
+    {"label": "Leaderboard", "style": discord.ButtonStyle.blurple, "emoji": "🏆", "callback": lb_button_callback}],
+    [{"label": "GitHub", "emoji": "<a:github:1387274840154701874>", "url": "https://github.com/ocrxn/Foraging-Bot"},
+    {"label": "Vote", "style": discord.ButtonStyle.danger, "emoji": "<a:Vote:1383117707519459418>", "callback": vote_button_callback}]
 ])
-    await interaction.response.send_message(embed=profile_embed, view=view, ephemeral=True,delete_after=120)
+    if callback is None:
+        await interaction.response.send_message(embed=profile_embed, view=view, ephemeral=True,delete_after=120)
+    else:
+        await interaction.response.defer()
+        await interaction.edit_original_response(embed=profile_embed, view=view)
+    
 
 @bot.tree.command(name='profile', description='Display Profile Stats')
 async def profile_command(interaction: discord.Interaction):
-    await profile_logic(interaction)
+    await profile_logic(interaction, callback=None)
 
 async def log_totals_logic(interaction: discord.Interaction):
     await interaction.response.defer()
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
-    
     if not result:
         await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
         return
@@ -323,20 +400,20 @@ async def log_totals_logic(interaction: discord.Interaction):
 )
     lines = [
         f"**Logs in Inventory**: {str(result["logs"]).rjust(5)}\n**🏆All Time Logs Collected**: {str(result["total_logs"]).rjust(5)}",
-        fmt_block("<:Acacia_Log:1306063726532624475>", "Acacia", result["acacia"], result["total_acacia"]),
-        fmt_block("<:Birch_Log:1306063717582110811>", "Birch", result["birch"], result["total_birch"]),
-        fmt_block("<:Dark_Oak_Log:1306063707805061161>", "Dark Oak", result["dark_oak"], result["total_dark_oak"]),
-        fmt_block("<:Jungle_Log:1306063697273425950>", "Jungle", result["jungle"], result["total_jungle"]),
-        fmt_block("<:Oak_Log:1306063668966064188>", "Oak", result["oak"], result["total_oak"]),
-        fmt_block("<:Spruce_Log:1306063686070304869>", "Spruce", result["spruce"], result["total_spruce"]),
+        fmt_block(f"{wood['acacia']}", "Acacia", result["acacia"], result["total_acacia"]),
+        fmt_block(f"{wood['birch']}", "Birch", result["birch"], result["total_birch"]),
+        fmt_block(f"{wood['dark_oak']}", "Dark Oak", result["dark_oak"], result["total_dark_oak"]),
+        fmt_block(f"{wood['jungle']}", "Jungle", result["jungle"], result["total_jungle"]),
+        fmt_block(f"{wood['oak']}", "Oak", result["oak"], result["total_oak"]),
+        fmt_block(f"{wood['spruce']}", "Spruce", result["spruce"], result["total_spruce"]),
 ]
     totals_embed = discord.Embed(
-        title="👤 Logs Collected Stats",
+        title=f"Logs Collected Stats\n{wood['acacia']}{wood['birch']}{wood['dark_oak']}{wood['jungle']}{wood['oak']}{wood['spruce']}",
         description="\n\n".join(lines),
         color=0x0000CC,
         timestamp=datetime.now()
     )
-    totals_embed.set_thumbnail(url='https://wallpapers.com/images/hd/aesthetic-pixel-art-hd-tw4g4yk63da4tj6x.jpg')
+    totals_embed.set_thumbnail(url=interaction.user.display_avatar)
     totals_embed.set_author(name=interaction.user)
 
     view = create_view([
@@ -357,7 +434,7 @@ async def shop_logic(interaction: discord.Interaction):
         description=f"""Items to purchase.
 1. Axe Upgrades (Current: {axes[result['axe_type']] if result['axe_type'] != 'None' else ''}**{result["axe_type"]}**)
 2. Armor Upgrades (Current: {armor[result['armor_type']] if result['armor_type'] != 'None' else ''}**{result["armor_type"]}**)
-3. Pet Upgrades (Current: {'None' if result['pet_type'] == 'None' else f'{pets[result['pet_type']]} **{result['pet_type']}**'})
+3. Pet Upgrades (Current: {f'{pets[result['pet_type']] if result['pet_type'] != 'None' else 'None'} **{result['pet_type']}**'})
 4. Minion Upgrades (Current: **NONE**)
 P.S. Voting gives you a temporary 2x wood multiplier
         """,
@@ -372,7 +449,7 @@ P.S. Voting gives you a temporary 2x wood multiplier
     ]
     row2=[
         {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
-        {"label": "Sell Items", "style": discord.ButtonStyle.danger, "emoji": "📄", "callback": sell_inventory_callback},
+        {"label": "Sell Items", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", "callback": sell_inventory_callback},
         {"label": "Inventory", "style": discord.ButtonStyle.secondary, "emoji": "💼", "callback": shop_inventory_callback},
         {"label": "Profile", "style": discord.ButtonStyle.secondary, "emoji": "📄", "callback": profile_button_callback}
     ]
@@ -433,13 +510,13 @@ P.S. Voting gives you a temporary 2x wood multiplier
         timestamp=datetime.now()
         )
     view = create_view([
-    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", "sell_type": 'logs', 'disabled': result['logs']<1},
-    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", "sell_type": 'acacia', 'disabled': result['acacia']<1},
-    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", "sell_type": 'birch', 'disabled': result['birch']<1},
-    {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", "sell_type": 'dark_oak', 'disabled': result['dark_oak']<1},
-    {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", "sell_type": 'jungle', 'disabled': result['jungle']<1},
-    {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", "sell_type": 'oak', 'disabled': result['oak']<1},
-    {"label": "Sell Spruce", "style": discord.ButtonStyle.gray, "emoji": f"{wood['spruce']}", "sell_type": 'spruce', 'disabled': result['spruce']<1},        
+    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", 'disabled': result['logs']<1, 'kwargs': {"sell_type": 'logs'}},
+    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", 'disabled': result['acacia']<1, 'kwargs': {"sell_type": 'acacia'}},
+    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", 'disabled': result['birch']<1, 'kwargs': {"sell_type": 'birch'}},
+    {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", 'disabled': result['dark_oak']<1, 'kwargs': {"sell_type": 'dark_oak'}},
+    {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", 'disabled': result['jungle']<1, 'kwargs': {"sell_type": 'jungle'}},
+    {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", 'disabled': result['oak']<1, 'kwargs': {"sell_type": 'oak'}},
+    {"label": "Sell Spruce", "style": discord.ButtonStyle.gray, "emoji": f"{wood['spruce']}", 'disabled': result['spruce']<1, 'kwargs': {"sell_type": 'spruce'}},        
     {"label": "Back to [Shop - Main]", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
     await interaction.response.send_message(embed=sell_embed,view=view,ephemeral=True,delete_after=60)
@@ -559,9 +636,14 @@ async def shop_pet_logic(interaction: discord.Interaction):
                 "label": f"Buy {pet_name}",
                 "style": discord.ButtonStyle.blurple,
                 "emoji": f"{pets[pet_name]}",
-                "item_type": 'pet_type',
-                "item_name": pet_name
+                "disabled": pet_name in result['pets_inv'],
+                'kwargs': {
+                    "item_type": 'pet_type',
+                    "item_name": pet_name,
+                    "current_page": nonlocal_current_page["page"]
+                }
             })
+        
         rows = [row1]
         for i in range(0, len(buttons), 5):
             rows.append(buttons[i:i+5])
@@ -794,7 +876,7 @@ async def is_downgrade(interaction, result, item_type, item_name):
     
     return player_index > item_index
 
-async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=1):
+async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=2):
     await interaction.response.defer()
     if interaction.user.id not in buffer_db:
         await create_temp_user(interaction)
@@ -812,16 +894,89 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
 
     if item_type == "pet_type":
         cost = item_info["cost"]
+
         if item_name in buffer_db[interaction.user.id]['pets_inv']:
             await interaction.edit_original_response(content=f"You already own this pet.")
             return
+
         if result["balance"] < cost:
             await interaction.edit_original_response(content=f"❌ Not enough coins! You need {cost:,}.")
             return
-        result['pets_inv'][item_name] = {'pet_level': 0, 'pet_xp': 0}
+
+        result['pets_inv'][item_name] = {"pet_level": 0, "pet_xp": 0}
         result['pet_type'] = item_name
-        result["balance"] -= cost
-        await interaction.edit_original_response(content=f"**You purchased {pets[item_name]} {item_name} for {cost}!**")
+        result['balance'] -= cost
+
+        tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
+        items_dict = items_map.ITEMS["pet_type"]
+        def make_embed(page):
+            tier = tier_order[page]
+            desc = f"**{tier} Pets**\n"
+            pets_on_page = []
+            for pet_name, pet_data in items_dict.items():
+                if pet_data["tier"] == tier:
+                    desc += f"- {pet_name} (Cost: ${pet_data['cost']:,})\n"
+                    pets_on_page.append(pet_name)
+            shop_embed = discord.Embed(title="Purchase Pets", description=desc, timestamp=datetime.now())
+            shop_embed.set_footer(text=f"Page {page + 1} of {len(tier_order)}")
+            return shop_embed, pets_on_page
+        
+        nonlocal_current_page = {"page": current_page}
+
+        async def left_callback(interaction: discord.Interaction):
+            nonlocal_current_page["page"] = (nonlocal_current_page["page"] - 1) % len(tier_order)
+            new_embed = make_embed(nonlocal_current_page["page"])[0]
+            pets = [pet for pet, data in items_dict.items() if data["tier"] == tier_order[nonlocal_current_page["page"]]]
+            new_view = create_view(make_buttons(pets))
+            await interaction.response.edit_message(embed=new_embed, view=new_view)
+
+        async def right_callback(interaction: discord.Interaction):
+            nonlocal_current_page["page"] = (nonlocal_current_page["page"] + 1) % len(tier_order)
+            new_embed = make_embed(nonlocal_current_page["page"])[0]
+            pets = [pet for pet, data in items_dict.items() if data["tier"] == tier_order[nonlocal_current_page["page"]]]
+            new_view = create_view(make_buttons(pets))
+            await interaction.response.edit_message(embed=new_embed, view=new_view)
+
+        # --- Button builder ---
+        def make_buttons(pets_list):
+            row1 = [
+                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback},
+                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback}
+            ]
+
+            buttons = [{
+                "label": f"Buy {pet}",
+                "style": discord.ButtonStyle.blurple,
+                "emoji": pets[pet],
+                "item_type": "pet_type",
+                "item_name": pet,
+                "disabled": pet in result["pets_inv"],
+                "kwargs": {
+                    "item_type": "pet_type",
+                    "item_name": pet,
+                    "current_page": current_page
+                }
+            } for pet in pets_list]
+
+            rows = [row1]
+            for i in range(0, len(buttons), 5):
+                rows.append(buttons[i:i+5])
+
+            rows.append([
+                {"label": "Your Pets", "style": discord.ButtonStyle.green, "emoji": "📄", "callback": pet_menu_callback},
+                {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback}
+            ])
+
+            return rows
+
+        shop_embed, pets_on_page = make_embed(current_page)
+
+        new_view = create_view(make_buttons(pets_on_page))
+
+        await interaction.edit_original_response(content=f"✅ You purchased {pets[item_name]} {item_name} for ${item_info['cost']:,}!",view=new_view)
+
+
+
 
     elif item_type == "Minion_Type" and item_name == "slot_costs":
 
@@ -956,14 +1111,22 @@ P.S. Voting gives you a temporary 2x wood multiplier
     dirty_users.add(interaction.user.id)
 
     view = create_view([
-    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", "sell_type": 'logs', 'disabled': result['logs']<1},
-    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", "sell_type": 'acacia', 'disabled': result['acacia']<1},
-    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", "sell_type": 'birch', 'disabled': result['birch']<1},
-    {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", "sell_type": 'dark_oak', 'disabled': result['dark_oak']<1},
-    {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", "sell_type": 'jungle', 'disabled': result['jungle']<1},
-    {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", "sell_type": 'oak', 'disabled': result['oak']<1},
-    {"label": "Sell Spruce", "style": discord.ButtonStyle.gray, "emoji": f"{wood['spruce']}", "sell_type": 'spruce', 'disabled': result['spruce']<1},        
+    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", 'disabled': result['logs']<1, 'kwargs': {"sell_type": 'logs'}},
+    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", 'disabled': result['acacia']<1, 'kwargs': {"sell_type": 'acacia'}},
+    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", 'disabled': result['birch']<1, 'kwargs': {"sell_type": 'birch'}},
+    {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", 'disabled': result['dark_oak']<1, 'kwargs': {"sell_type": 'dark_oak'}},
+    {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", 'disabled': result['jungle']<1, 'kwargs': {"sell_type": 'jungle'}},
+    {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", 'disabled': result['oak']<1, 'kwargs': {"sell_type": 'oak'}},
+    {"label": "Sell Spruce", "style": discord.ButtonStyle.gray, "emoji": f"{wood['spruce']}", 'disabled': result['spruce']<1, 'kwargs': {"sell_type": 'spruce'}},        
     {"label": "Back to [Shop - Main]", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
 
-    await interaction.edit_original_response(embed=sell_embed,view=view)
+    await interaction.followup.send(embed=sell_embed,view=view)
+
+async def sell_all_logic(interaction: discord.Interaction):
+    await sell_inventory(interaction,'logs')
+
+@bot.tree.command(name='sellall',description='Instantly sell all logs.')
+async def sell_all(interaction: discord.Interaction):
+    await sell_all_logic(interaction)
+
