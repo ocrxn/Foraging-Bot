@@ -79,8 +79,7 @@ async def truncate(interaction: discord.Interaction, confirm: str, token: str):
         exe.close()
         conn.close()
     
-@bot.tree.command(name="create_account", description="Creates user account.")
-async def create_acc(interaction: discord.Interaction):
+async def _create_account_logic(interaction: discord.Interaction):
     try:
         conn = connect_db()
         exe = conn.cursor()
@@ -88,12 +87,10 @@ async def create_acc(interaction: discord.Interaction):
         result = exe.fetchone()
 
         if not result:
-            await interaction.response.defer(thinking=True)
             init_query = """INSERT INTO stats (dc_id, dc_username, xp, balance, axe_type, armor_type, pet_type)
                             VALUES (%s, %s, %s, %s, %s, %s, %s)"""
             exe.execute(init_query, (interaction.user.id, interaction.user.name, 0, 0, 'None', 'None', 'None'))
             conn.commit()
-            await interaction.followup.send(content=f"{interaction.user.mention} ✅ Account created successfully.",ephemeral=True)
         else:
             await interaction.response.send_message("User already exists.",ephemeral=True)     
     except psycopg2.Error as error:
@@ -101,6 +98,10 @@ async def create_acc(interaction: discord.Interaction):
     finally:
         exe.close()
         conn.close() 
+
+@bot.tree.command(name="create_account", description="Creates user account.")
+async def create_acc(interaction: discord.Interaction):
+    await _create_account_logic(interaction)
 
 async def bug_report_logic(interaction: discord.Interaction, message:str):
     await interaction.response.send_message(content=f":heart: Thank you **{interaction.user.name}** for reporting a bug.",ephemeral=True)
@@ -116,10 +117,10 @@ async def bug_report(interaction: discord.Interaction, message:str):
 async def help_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
-        
+
     if not result:
-        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
+
     commands = await bot.tree.fetch_commands()
     command_list = "\n".join(f"``{i+1}. {cmd}``" for i, cmd in enumerate(commands))
     help_embed = discord.Embed(
@@ -140,7 +141,7 @@ async def help_logic(interaction: discord.Interaction):
 
 ])
     
-    await interaction.response.send_message(embed=help_embed, view=view, ephemeral=True,delete_after=20)
+    await interaction.response.send_message(embed=help_embed, view=view, ephemeral=True)
 
 @bot.tree.command(name='help',description="Get a list of available commands.")
 async def help(interaction: discord.Interaction):
@@ -152,8 +153,7 @@ async def vote_logic(interaction: discord.Interaction):
     result = buffer_db.get(user_id) or await retrieve(interaction)
         
     if not result:
-        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     vote_embed = discord.Embed(
         title="Please vote for Foraging Bot",
@@ -189,8 +189,8 @@ async def leaderboard_logic(interaction: discord.Interaction, callback: None, pa
     result = buffer_db.get(user_id) or await retrieve(interaction)
 
     if not result:
-        await interaction.response.send_message("Welcome to Foraging Bot.\nTry running **/create_account**.",ephemeral=True, delete_after=15)
-        return
+        await _create_account_logic(interaction)
+
     top_10 = ""
     if page == 1:
         get_query = "SELECT dc_username FROM stats ORDER BY game_level DESC, xp DESC LIMIT 10;"
@@ -234,10 +234,7 @@ async def leaderboard_logic(interaction: discord.Interaction, callback: None, pa
         await interaction.response.send_message(embed=lb_embed, view=view, ephemeral=True, delete_after=30)
     else:
         await interaction.response.defer()
-        await interaction.edit_original_response(embed=lb_embed, view=view)
-
-
-    
+        await interaction.edit_original_response(embed=lb_embed, view=view)   
 
 @bot.tree.command(name='leaderboard',description="View Top Foragers!")
 async def leaderboard(interaction: discord.Interaction):
@@ -266,11 +263,13 @@ async def check_level_up(current_level, current_xp, base_xp=100, growth_rate=1.3
 
 async def forage_logic(interaction: discord.Interaction, callback: None):
     user_id = interaction.user.id
+    
+    await interaction.response.defer(ephemeral=True)
+    result = await retrieve(interaction)
+    if not result:
+        await _create_account_logic(interaction)
+
     if not user_id in buffer_db:
-        result = await retrieve(interaction)
-        if not result:
-            await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
-            return
         await create_temp_user(interaction)
         
     user_data = buffer_db[user_id]
@@ -335,9 +334,8 @@ async def forage_logic(interaction: discord.Interaction, callback: None):
     {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback}
 ])
     if callback is None:
-        await interaction.response.send_message(embed=forage_embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=forage_embed, view=view, ephemeral=True)
     else:
-        await interaction.response.defer()
         await interaction.edit_original_response(embed=forage_embed, view=view)
             
 
@@ -350,8 +348,8 @@ async def profile_logic(interaction: discord.Interaction, callback: None):
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
-        await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
+
     _, _, xp_to_next, _ = await check_level_up(
         result['game_level'], result['xp'])
     
@@ -391,8 +389,7 @@ async def log_totals_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
     if not result:
-        await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     def fmt_block(icon, name, current, total):
         return(f"{icon} **{name} Logs**: {str(current).rjust(5)}\n"
@@ -426,8 +423,7 @@ async def shop_logic(interaction: discord.Interaction):
     result = buffer_db.get(user_id) or await retrieve(interaction)
 
     if not result:
-        await interaction.response.send_message("You do not have an account.\nTry running **/create_account** first.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     shop_embed = discord.Embed(
         title="Shop Menu",
@@ -449,7 +445,7 @@ P.S. Voting gives you a temporary 2x wood multiplier
     ]
     row2=[
         {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
-        {"label": "Sell Items", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", "callback": sell_inventory_callback},
+        {"label": "Sell Items", "style": discord.ButtonStyle.gray, "emoji": "💵", "callback": sell_inventory_callback},
         {"label": "Inventory", "style": discord.ButtonStyle.secondary, "emoji": "💼", "callback": shop_inventory_callback},
         {"label": "Profile", "style": discord.ButtonStyle.secondary, "emoji": "📄", "callback": profile_button_callback}
     ]
@@ -466,8 +462,7 @@ async def shop_inventory_logic(interaction: discord.Interaction):
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     shop_embed = discord.Embed(
         title="Inventory Menu",
@@ -521,17 +516,12 @@ P.S. Voting gives you a temporary 2x wood multiplier
 ])
     await interaction.response.send_message(embed=sell_embed,view=view,ephemeral=True,delete_after=60)
 
-@bot.tree.command(name='sell', description='Sell Wood')
-async def sell_command(interaction: discord.Interaction):
-    await sell_inventory_logic(interaction)
-
 async def shop_axe_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     item_label = items_map.ITEMS['axe_type']
 
@@ -569,8 +559,7 @@ async def shop_armor_logic(interaction: discord.Interaction):
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     price_label = items_map.ITEMS['armor_type']
     shop_embed = discord.Embed(
@@ -606,8 +595,7 @@ async def shop_pet_logic(interaction: discord.Interaction):
     result = buffer_db.get(user_id) or await retrieve(interaction)
     
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.", ephemeral=True, delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
     items_dict = items_map.ITEMS["pet_type"]
@@ -681,8 +669,7 @@ async def pet_menu_logic(interaction: discord.Interaction):
         result['pets_inv'] = json.loads(result['pets_inv'])
 
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
 
     pet_lines = "\n".join(
         f"{pets.get(pet, '')} {pet}: Level {data['pet_level']} ({data['pet_xp']} XP)"
@@ -748,8 +735,7 @@ async def shop_minion_logic(interaction: discord.Interaction, start_page=0):
         result['minions'] = json.loads(result['minions'])
 
     if not result:
-        await interaction.response.send_message("Something went wrong.\nTry running **/create_account**.", ephemeral=True, delete_after=15)
-        return
+        await _create_account_logic(interaction)
 
     minion_data = result['minions']
     minion_slots = list(minion_data.items())
@@ -883,8 +869,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
     result = buffer_db[interaction.user.id]
 
     if not result:
-        await interaction.followup.send("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
     
     item_info = items_map.ITEMS.get(item_type, {}).get(item_name)
 
@@ -1066,7 +1051,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         
     dirty_users.add(interaction.user.id)
 
-async def sell_inventory(interaction: discord.Interaction, sell_type:str):
+async def sell_inventory(interaction: discord.Interaction, sell_type:str, amount=None):
     await interaction.response.defer()
     if interaction.user.id in buffer_db:
         result = buffer_db[interaction.user.id]
@@ -1075,8 +1060,8 @@ async def sell_inventory(interaction: discord.Interaction, sell_type:str):
         await create_temp_user(interaction)
 
     if not result:
-        await interaction.followup.send("Something went wrong.\nTry running **/create_account**.",ephemeral=True,delete_after=15)
-        return
+        await _create_account_logic(interaction)
+
     lines = [
     (f'1. {wood['logs']} Sell ALL', result['logs']),
     (f'2. {wood['acacia']} Sell Acacia', result['acacia']),
@@ -1093,20 +1078,27 @@ async def sell_inventory(interaction: discord.Interaction, sell_type:str):
         desc += f"{left_text}{'.'*total_dots}{right_text}\n"
     sell_embed = discord.Embed(
             title="Sell Wood Menu",
-            description=f"""```💵 You sold {result[sell_type]} {sell_type if sell_type != 'logs' else ''} logs for ${result[sell_type]*2:,}.```
+            description=f"""```💵 You sold {amount if amount else 0} {sell_type if sell_type != 'logs' else ''} logs for ${result[sell_type]*2:,}.```
 {desc}
 P.S. Voting gives you a temporary 2x wood multiplier
             """,
         timestamp=datetime.now()
         )
-    total = result[sell_type]*2
+    
+    
     if sell_type == "logs":
+        total = result[sell_type]*2
         buffer_db[interaction.user.id]['logs'] = 0
         for log in wood_id:
             buffer_db[interaction.user.id][log] = 0
+    elif amount:
+        total = amount*2
+        buffer_db[interaction.user.id]['logs'] -= amount
+        buffer_db[interaction.user.id][sell_type] -= amount
     else:
-        buffer_db[interaction.user.id]['logs'] = 0
+        total = result[sell_type]*2
         buffer_db[interaction.user.id][sell_type] = 0
+
     buffer_db[interaction.user.id]['balance'] += total
     dirty_users.add(interaction.user.id)
 
@@ -1121,12 +1113,29 @@ P.S. Voting gives you a temporary 2x wood multiplier
     {"label": "Back to [Shop - Main]", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
 
-    await interaction.followup.send(embed=sell_embed,view=view)
+    await interaction.edit_original_response(embed=sell_embed,view=view)
 
-async def sell_all_logic(interaction: discord.Interaction):
-    await sell_inventory(interaction,'logs')
+async def sell_logic(interaction: discord.Interaction,sell_type, amount):
+    await sell_inventory(interaction,sell_type, amount)
 
-@bot.tree.command(name='sellall',description='Instantly sell all logs.')
+@bot.tree.command(name='sa',description='Sell all logs.')
 async def sell_all(interaction: discord.Interaction):
-    await sell_all_logic(interaction)
+    await sell_logic(interaction,sell_type='logs')
 
+
+async def sell_autocomplete(interaction: discord.Interaction, current: str):
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+    if not result:
+        await _create_account_logic(interaction)
+        
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in ['acacia','birch','dark_oak','jungle','oak','spruce']
+        if current.lower() in name.lower()][:25]
+
+@bot.tree.command(name='sell',description='Sell your logs here...')
+@app_commands.describe(sell_type="Enter Log Type or [all]: ",amount="Enter Log Total or [0 for max]: ")
+@app_commands.autocomplete(sell_type=sell_autocomplete)
+async def sell(interaction: discord.Interaction, sell_type:str, amount:int):
+    await sell_logic(interaction, sell_type, amount)
