@@ -43,8 +43,8 @@ async def sync(interaction: discord.Interaction):
         await interaction.response.send_message("❌ You do not have permission to run this command.", ephemeral=True)
         return
     await bot.tree.sync()
-    commands = await bot.tree.fetch_commands()
-    await interaction.response.send_message(f"{interaction.user.name} has run /sync. {len(commands)} commands synced to tree.")
+    bot_commands = await bot.tree.fetch_commands()
+    await interaction.response.send_message(f"{interaction.user.name} has run /sync. {len(bot_commands)} commands synced to tree.")
 
 @commands.has_role("Owner")
 @app_commands.default_permissions()
@@ -99,14 +99,14 @@ async def _create_account_logic(interaction: discord.Interaction):
         exe.close()
         conn.close() 
 
-@bot.tree.command(name="create_account", description="Creates user account.")
+@bot.tree.command(name="create_account", description="Creates user account. (Accounts created automatically)")
 async def create_acc(interaction: discord.Interaction):
     await _create_account_logic(interaction)
 
 async def bug_report_logic(interaction: discord.Interaction, message:str):
     await interaction.response.send_message(content=f":heart: Thank you **{interaction.user.name}** for reporting a bug.",ephemeral=True)
-    with open('dev_notes/bug_reports.txt', 'a') as bug_report:
-        bug_report.write(f"Date: {datetime.now()} | User: {interaction.user.name}({interaction.user.id}): {message}\n")
+    with open('dev_notes/bug_reports.txt', 'a') as file:
+        file.write(f"Date: {datetime.now()} | User: {interaction.user.name}({interaction.user.id}): {message}\n")
 
 @bot.tree.command(name='bug_report',description='Report bugs here. Only use this for legitimate bug reports.')
 @app_commands.describe(message='Please describe the bug.')
@@ -121,8 +121,8 @@ async def help_logic(interaction: discord.Interaction):
     if not result:
         await _create_account_logic(interaction)
 
-    commands = await bot.tree.fetch_commands()
-    command_list = "\n".join(f"``{i+1}. {cmd}``" for i, cmd in enumerate(commands))
+    bot_commands = await bot.tree.fetch_commands()
+    command_list = "\n".join(f"``{i+1}. {cmd}``" for i, cmd in enumerate(bot_commands))
     help_embed = discord.Embed(
         title="Welcome to Foraging Bot",
         description=f"""
@@ -144,7 +144,7 @@ async def help_logic(interaction: discord.Interaction):
     await interaction.response.send_message(embed=help_embed, view=view, ephemeral=True)
 
 @bot.tree.command(name='help',description="Get a list of available commands.")
-async def help(interaction: discord.Interaction):
+async def help_cmd(interaction: discord.Interaction):
     await help_logic(interaction)
 
 
@@ -1076,17 +1076,12 @@ async def sell_inventory(interaction: discord.Interaction, sell_type:str, amount
         right_text = f"({count:,} | ${count*2:,})"
         total_dots = 80 - len(left_text) - len(right_text)
         desc += f"{left_text}{'.'*total_dots}{right_text}\n"
-    sell_embed = discord.Embed(
-            title="Sell Wood Menu",
-            description=f"""```💵 You sold {amount if amount else 0} {sell_type if sell_type != 'logs' else ''} logs for ${result[sell_type]*2:,}.```
-{desc}
-P.S. Voting gives you a temporary 2x wood multiplier
-            """,
-        timestamp=datetime.now()
-        )
-    
-    
+    profit = result[sell_type]*2
+    if amount == 'all':
+        amount = result['sell_type']
+
     if sell_type == "logs":
+        amount = result['logs']
         total = result[sell_type]*2
         buffer_db[interaction.user.id]['logs'] = 0
         for log in wood_id:
@@ -1101,6 +1096,14 @@ P.S. Voting gives you a temporary 2x wood multiplier
 
     buffer_db[interaction.user.id]['balance'] += total
     dirty_users.add(interaction.user.id)
+    sell_embed = discord.Embed(
+        title="Sell Wood Menu",
+        description=f"""```💵 You sold {amount if amount else 0} {sell_type if sell_type != 'logs' else ''} logs for ${profit:,}.```
+    {desc}
+    P.S. Voting gives you a temporary 2x wood multiplier
+                """,
+        timestamp=datetime.now()
+    )
 
     view = create_view([
     {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", 'disabled': result['logs']<1, 'kwargs': {"sell_type": 'logs'}},
@@ -1120,7 +1123,7 @@ async def sell_logic(interaction: discord.Interaction,sell_type, amount):
 
 @bot.tree.command(name='sa',description='Sell all logs.')
 async def sell_all(interaction: discord.Interaction):
-    await sell_logic(interaction,sell_type='logs')
+    await sell_logic(interaction,sell_type='logs',amount='all')
 
 
 async def sell_autocomplete(interaction: discord.Interaction, current: str):
@@ -1128,7 +1131,7 @@ async def sell_autocomplete(interaction: discord.Interaction, current: str):
     result = buffer_db.get(user_id) or await retrieve(interaction)
     if not result:
         await _create_account_logic(interaction)
-        
+
     return [
         app_commands.Choice(name=name, value=name)
         for name in ['acacia','birch','dark_oak','jungle','oak','spruce']
