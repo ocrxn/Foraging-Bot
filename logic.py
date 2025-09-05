@@ -113,6 +113,16 @@ async def bug_report_logic(interaction: discord.Interaction, message:str):
 async def bug_report(interaction: discord.Interaction, message:str):
     await bug_report_logic(interaction, message)
 
+async def suggest_logic(interaction: discord.Interaction, message:str):
+    await interaction.response.send_message(content=f"Thank you **{interaction.user.name}** for your suggestion. Your request has been recorded.",ephemeral=True)
+    with open('dev_notes/suggestions.txt', 'a') as file:
+        file.write(f"Date: {datetime.now()} | User: {interaction.user.name}({interaction.user.id}): {message}\n")
+
+@bot.tree.command(name='suggest',description='Suggest new features. *If you are reporting a bug, use /bug_report.')
+@app_commands.describe(message='Enter your suggestion.')
+async def suggest(interaction: discord.Interaction, message:str):
+    await suggest_logic(interaction, message)
+
 
 async def help_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
@@ -209,7 +219,7 @@ async def leaderboard_logic(interaction: discord.Interaction, callback: None, pa
     conn.close()
     top_10 = ""
     for i, user in enumerate(top, start=1):
-        username = user[0]  # Extract the string from the tuple
+        username = user[0]
         top_10 += f"**{i}.** {username}\n"
     
     lb_embed= discord.Embed(
@@ -543,13 +553,13 @@ P.S. Voting gives you a temporary 2x wood multiplier
     )
 
     view = create_view([                             
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['wooden_axe']}", "item_type": "axe_type", "item_name": "wooden_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['stone_axe']}", "item_type": "axe_type", "item_name": "stone_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['iron_axe']}", "item_type": "axe_type", "item_name": "iron_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['gold_axe']}", "item_type": "axe_type", "item_name": "gold_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['diamond_axe']}", "item_type": "axe_type", "item_name": "diamond_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['netherite_axe']}", "item_type": "axe_type", "item_name": "netherite_axe"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['mythic_axe']}", "item_type": "axe_type", "item_name": "mythic_axe"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['wooden_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "wooden_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['stone_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "stone_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['iron_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "iron_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['gold_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "gold_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['diamond_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "diamond_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['netherite_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "netherite_axe"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{axes['mythic_axe']}", 'kwargs': {"item_type": "axe_type", "item_name": "mythic_axe"}},
 {"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
@@ -578,13 +588,13 @@ P.S. Voting gives you a temporary 2x wood multiplier
     )
 
     view = create_view([
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['leather_armor']}", "item_type": "armor_type", "item_name": "leather_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['chainmail_armor']}", "item_type": "armor_type", "item_name": "chainmail_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['iron_armor']}", "item_type": "armor_type", "item_name": "iron_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['gold_armor']}", "item_type": "armor_type", "item_name": "gold_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['diamond_armor']}", "item_type": "armor_type", "item_name": "diamond_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['netherite_armor']}", "item_type": "armor_type", "item_name": "netherite_armor"},
-{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['mythic_armor']}", "item_type": "armor_type", "item_name": "mythic_armor"},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['leather_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "leather_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['chainmail_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "chainmail_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['iron_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "iron_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['gold_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "gold_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['diamond_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "diamond_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['netherite_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "netherite_armor"}},
+{"label": "", "style": discord.ButtonStyle.green, "emoji": f"{armor['mythic_armor']}", 'kwargs': {"item_type": "armor_type", "item_name": "mythic_armor"}},
 {"label": "Back to Main Shop", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
 ])
     await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
@@ -1046,7 +1056,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         result["balance"] -= cost
         await interaction.edit_original_response(content=f"You purchased {item_name} for ${cost:,.2f}.")
     else:
-        await interaction.edit_original_response("Unknown item type.", ephemeral=True)
+        await interaction.edit_original_response(content="Unknown item type.", ephemeral=True)
         return
         
     dirty_users.add(interaction.user.id)
@@ -1078,7 +1088,7 @@ async def sell_inventory(interaction: discord.Interaction, sell_type:str, amount
         desc += f"{left_text}{'.'*total_dots}{right_text}\n"
     profit = result[sell_type]*2
     if amount == 'all':
-        amount = result['sell_type']
+        amount = result[sell_type]
 
     if sell_type == "logs":
         amount = result['logs']
@@ -1106,9 +1116,9 @@ async def sell_inventory(interaction: discord.Interaction, sell_type:str, amount
     )
 
     view = create_view([
-    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", 'disabled': result['logs']<1, 'kwargs': {"sell_type": 'logs'}},
-    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", 'disabled': result['acacia']<1, 'kwargs': {"sell_type": 'acacia'}},
-    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", 'disabled': result['birch']<1, 'kwargs': {"sell_type": 'birch'}},
+    {"label": "Sell ALL", "style": discord.ButtonStyle.gray, "emoji": f"{wood['logs']}", 'disabled': result['logs']<1, 'kwargs': {"sell_type": 'logs', 'amount': 'all'}},
+    {"label": "Sell Acacia", "style": discord.ButtonStyle.gray, "emoji": f"{wood['acacia']}", 'disabled': result['acacia']<1, 'kwargs': {"sell_type": 'acacia', 'amount': 'all'}},
+    {"label": "Sell Birch", "style": discord.ButtonStyle.gray, "emoji": f"{wood['birch']}", 'disabled': result['birch']<1, 'kwargs': {"sell_type": 'birch', 'amount': 'all'}},
     {"label": "Sell Dark Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['dark_oak']}", 'disabled': result['dark_oak']<1, 'kwargs': {"sell_type": 'dark_oak'}},
     {"label": "Sell Jungle", "style": discord.ButtonStyle.gray, "emoji": f"{wood['jungle']}", 'disabled': result['jungle']<1, 'kwargs': {"sell_type": 'jungle'}},
     {"label": "Sell Oak", "style": discord.ButtonStyle.gray, "emoji": f"{wood['oak']}", 'disabled': result['oak']<1, 'kwargs': {"sell_type": 'oak'}},
@@ -1123,7 +1133,7 @@ async def sell_logic(interaction: discord.Interaction,sell_type, amount):
 
 @bot.tree.command(name='sa',description='Sell all logs.')
 async def sell_all(interaction: discord.Interaction):
-    await sell_logic(interaction,sell_type='logs',amount='all')
+    await sell_inventory(interaction,sell_type='logs',amount='all')
 
 
 async def sell_autocomplete(interaction: discord.Interaction, current: str):

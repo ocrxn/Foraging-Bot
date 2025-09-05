@@ -32,39 +32,61 @@ def create_view(button_configs):
                 button_kwargs["style"] = discord.ButtonStyle.link
                 button_kwargs["url"] = config.get('url')
                 button = Button(**button_kwargs)
-                
-            elif config.get('kwargs'):
-                button = Button(**button_kwargs)
-                kwargs = config.get('kwargs', {})
-
-                async def callback(interaction, kwargs=kwargs):
-                    from logic import purchase_item, sell_inventory
-
-                    if 'purchase' in kwargs or kwargs.get('item_type'):
-                        from logic import purchase_item
-                        await purchase_item(interaction, **kwargs)
-                    elif 'sell' in kwargs or 'sell_type' in kwargs:
-                        from logic import sell_inventory
-                        await sell_inventory(interaction, **kwargs)
-                    else:
-                        await interaction.response.send_message("Action not recognized.", ephemeral=True)
-
-                button.callback = callback
 
             else:
                 button = Button(**button_kwargs)
 
-                def create_button_callback(callback, args=None,kwargs=None):
-                    args = args or []
-                    kwargs = kwargs or {}
+                if 'callback' in config:
+                    args = config.get('args', [])
 
-                    async def cb(interaction):
+                    kwargs = config.get('kwargs', {})
+
+                    async def cb(interaction, callback=config['callback'], args=args, kwargs=kwargs):
+
                         await callback(interaction, *args, **kwargs)
 
-                    return cb
-                
-                button.callback = create_button_callback(config['callback'], config.get('args', []), config.get('kwargs', {}))           
+                    button.callback = cb
 
-            view.add_item(button)
+
+                elif config.get('kwargs'):
+
+                    # Fallback logic for shop/sell buttons with no custom callback
+
+                    button = Button(**button_kwargs)
+
+                    kwargs = config.get('kwargs', {})
+
+                    async def callback(interaction, kwargs=kwargs):
+                        from logic import purchase_item, sell_inventory
+                        if 'purchase' in kwargs or kwargs.get('item_type'):
+                            await purchase_item(interaction, **kwargs)
+                        elif 'sell' in kwargs or 'sell_type' in kwargs:
+                            await sell_inventory(interaction, **kwargs)
+                        else:
+                            await interaction.response.send_message("Action not recognized.", ephemeral=True)
+
+                    button.callback = callback
+
+                else:
+                    async def default_cb(interaction):
+                        await interaction.response.send_message("No action set for this button.", ephemeral=True)
+                        for thing in config:#Debugging
+                            print(f"{thing}: {config[thing]}")
+
+                    button.callback = default_cb
+                    # def create_button_callback(callback, args=None,kwargs=None):
+                    #     args = args or []
+                    #     kwargs = kwargs or {}
+                    #
+                    #     async def cb(interaction):
+                    #         await callback(interaction, *args, **kwargs)
+                    #
+                    #     return cb
+                    # if 'callback' in config:
+                    #     button.callback = create_button_callback(config['callback'], config.get('args', []), config.get('kwargs', {}))
+                    # else:
+                    #     print("Config is missing 'callback")
+
+                view.add_item(button)
 
     return view
