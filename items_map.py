@@ -178,21 +178,26 @@ ITEMS = {
             'speed': 1,
             'storage': 64
         },
-        'Birch I': {
+        'Dark Oak I': {
             'cost': 2000,
             'speed': 1,
             'storage': 64
         },
-        'Birch I': {
+        'Jungle I': {
             'cost': 2000,
             'speed': 1,
             'storage': 64
         },
-        'Birch I': {
+        'Oak I': {
             'cost': 2000,
             'speed': 1,
             'storage': 64
-        }      
+        },
+        'Spruce I': {
+            'cost': 2000,
+            'speed': 1,
+            'storage': 64
+        }
     }
 }
 

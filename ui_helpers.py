@@ -53,6 +53,6 @@ async def shop_minion_callback(interaction: discord.Interaction, current_page):
     from logic import shop_minion_logic
     await shop_minion_logic(interaction, start_page=current_page['index'])
 
-async def minion_slot_view_callback(interaction: discord.Interaction, slot_name, current_page):
+async def minion_slot_view_callback(interaction: discord.Interaction, slot, current_page):
     from logic import minion_slot_view_logic
-    await minion_slot_view_logic(interaction, slot_name=slot_name, current_page=current_page)
+    await minion_slot_view_logic(interaction, slot_name=slot, current_page=current_page)

@@ -1,3 +1,5 @@
+import time
+
 from bot_instance import bot
 from config import *
 from datetime import datetime
@@ -130,13 +132,14 @@ async def help_logic(interaction: discord.Interaction):
 
     if not result:
         await _create_account_logic(interaction)
-
+    commands = {"Help": "Displays this page."}
     bot_commands = await bot.tree.fetch_commands()
     command_list = "\n".join(f"``{i+1}. {cmd}``" for i, cmd in enumerate(bot_commands))
     help_embed = discord.Embed(
         title="Welcome to Foraging Bot",
         description=f"""
 ``Available Commands``
+Commands: {commands}
 **{command_list}**
 **[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
         timestamp=datetime.now(),
@@ -364,7 +367,7 @@ async def profile_logic(interaction: discord.Interaction, callback: None):
         result['game_level'], result['xp'])
     
     profile_embed = discord.Embed(
-        title="**Profile Stats**",
+        title=f"**{interaction.user.name}'s Profile Stats**",
         description=f"""
 **Purse**: ${result['balance']:,}\n**Bank**: Coming Soon!
 Current level: **{result['game_level']}** | Next Level: **{result['xp']}/{xp_to_next}**
@@ -372,8 +375,10 @@ Current level: **{result['game_level']}** | Next Level: **{result['xp']}/{xp_to_
         color=0x0000CC,
         timestamp=datetime.now()
     )
-    profile_embed.set_author(name=interaction.user)
-    profile_embed.set_thumbnail(url=interaction.user.display_avatar)
+    profile_embed.set_author(name=interaction.user.name, icon_url=interaction.user.display_avatar.url)
+    profile_embed.set_thumbnail(url=interaction.user.display_avatar.url)
+    if interaction.user.banner:
+        profile_embed.set_image(url=interaction.user.banner.url)
 
     view = create_view([
     [{"label": "View Log Totals", "style": discord.ButtonStyle.blurple, "emoji": f"{wood['oak']}", "callback": log_totals_callback},
@@ -461,7 +466,8 @@ P.S. Voting gives you a temporary 2x wood multiplier
     ]
     rows = [row1,row2]
     view = create_view(rows)
-    await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True,delete_after=60)
+    await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True, delete_after=60)
+
 
 @bot.tree.command(name='shop', description='Open Shop Menu')
 async def shop_command(interaction: discord.Interaction):
@@ -539,7 +545,7 @@ async def shop_axe_logic(interaction: discord.Interaction):
 
     shop_embed = discord.Embed(
         title="Purchase Axes",
-        description=f"""Current Axe: **{result["axe_type"].replace('_',' ').title()}**
+        description=f"""Current Axe: {axes[result['axe_type']]}**{result["axe_type"].replace('_',' ').title()}**
 1. {axes['wooden_axe']} **Wooden Axe**{' ' * (max_name_width - len(f'{axes['wooden_axe']} Wooden Axe'))}   • Price: ${item_label['wooden_axe']['cost']:,} {f'⚡Power: {item_label['wooden_axe']['power']/10}':>30}
 2. {axes['stone_axe']} **Stone Axe**{' ' * (max_name_width - len(f'{axes['stone_axe']} Stone Axe'))}   • Price: ${item_label['stone_axe']['cost']:,} {f'⚡Power: {item_label['stone_axe']['power']/10}':>30}
 3. {axes['iron_axe']} **Iron Axe**{' ' * (max_name_width - len(f'{axes['iron_axe']} Iron Axe'))}   • Price: ${item_label['iron_axe']['cost']:,} {f'⚡Power: {item_label['iron_axe']['power']/10}':>28}
@@ -574,7 +580,7 @@ async def shop_armor_logic(interaction: discord.Interaction):
     price_label = items_map.ITEMS['armor_type']
     shop_embed = discord.Embed(
         title="Purchase Armor",
-        description=f"""Items to purchase.
+        description=f"""Current Armor: {armor[result['armor_type']]}**{result["armor_type"].replace('_',' ').title()}**
 1. {armor['leather_armor']} **Leather Armor | Price: ${price_label['leather_armor']['cost']:,}**
 2. {armor['chainmail_armor']} **Chainmail Armor | Price: ${price_label['chainmail_armor']['cost']:,}**
 3. {armor['iron_armor']} **Iron Armor | Price: ${price_label['iron_armor']['cost']:,}**
@@ -603,15 +609,15 @@ P.S. Voting gives you a temporary 2x wood multiplier
 async def shop_pet_logic(interaction: discord.Interaction):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
-    
+
     if not result:
         await _create_account_logic(interaction)
-    
+
     tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
     items_dict = items_map.ITEMS["pet_type"]
-    current_page = 0
+    current_page = 0  # keep it as int
 
-    def make_embed(page):
+    def make_embed(page: int):
         tier = tier_order[page]
         desc = f"**{tier} Pets**\n"
         pets_on_page = []
@@ -619,56 +625,63 @@ async def shop_pet_logic(interaction: discord.Interaction):
             if pet_data["tier"] == tier:
                 desc += f"- {pet_name} (Cost: ${pet_data['cost']:,})\n"
                 pets_on_page.append(pet_name)
-        shop_embed = discord.Embed(title="Purchase Pets", description=desc, timestamp=datetime.now())
-        shop_embed.set_footer(text=f"Page {page + 1} of {len(tier_order)}")
-        return shop_embed, pets_on_page
+
+        embed = discord.Embed(
+            title="Purchase Pets",
+            description=desc,
+            timestamp=datetime.now()
+        )
+        embed.set_footer(text=f"Page {page+1} of {len(tier_order)}")
+        return embed, pets_on_page
 
     def make_buttons(pets_list):
-        row1 = [
-            {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback},
-            {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback}
+        rows = [
+            [
+                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback},
+                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback},
+            ]
         ]
-        buttons = []
+
+        pet_buttons = []
         for pet_name in pets_list:
-            buttons.append({
+            pet_buttons.append({
                 "label": f"Buy {pet_name}",
                 "style": discord.ButtonStyle.blurple,
                 "emoji": f"{pets[pet_name]}",
                 "disabled": pet_name in result['pets_inv'],
-                'kwargs': {
-                    "item_type": 'pet_type',
-                    "item_name": pet_name,
-                    "current_page": nonlocal_current_page["page"]
+                "kwargs": {"item_type": "pet_type",
+                           "item_name": pet_name,
+                           "current_page": current_page,
+                           "make_embed": make_embed,
+                           "make_buttons": make_buttons
                 }
             })
-        
-        rows = [row1]
-        for i in range(0, len(buttons), 5):
-            rows.append(buttons[i:i+5])
-        rows.append([({"label": "Your Pets", "style": discord.ButtonStyle.green, "emoji": "📄", "callback": pet_menu_callback}),
-                    ({"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback})])
-        
+
+        for i in range(0, len(pet_buttons), 5):
+            rows.append(pet_buttons[i:i+5])
+
+        rows.append([
+            {"label": "Your Pets", "style": discord.ButtonStyle.green, "emoji": "📄", "callback": pet_menu_callback},
+            {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback},
+        ])
         return rows
 
-
-    shop_embed, current_pets = make_embed(current_page)
-    nonlocal_current_page = {"page": current_page}
-
     async def left_callback(interaction: discord.Interaction):
-        nonlocal_current_page["page"] = (nonlocal_current_page["page"] - 1) % len(tier_order)
-        new_embed, new_pets = make_embed(nonlocal_current_page["page"])
-        new_view = create_view(make_buttons(new_pets))
-        await interaction.response.edit_message(embed=new_embed, view=new_view)
+        nonlocal current_page
+        current_page = (current_page - 1) % len(tier_order)
+        new_embed, new_pets = make_embed(current_page)
+        await interaction.response.edit_message(embed=new_embed, view=create_view(make_buttons(new_pets)))
 
     async def right_callback(interaction: discord.Interaction):
-        nonlocal_current_page["page"] = (nonlocal_current_page["page"] + 1) % len(tier_order)
-        new_embed, new_pets = make_embed(nonlocal_current_page["page"])
-        new_view = create_view(make_buttons(new_pets))
-        await interaction.response.edit_message(embed=new_embed, view=new_view)
+        nonlocal current_page
+        current_page = (current_page + 1) % len(tier_order)
+        new_embed, new_pets = make_embed(current_page)
+        await interaction.response.edit_message(embed=new_embed, view=create_view(make_buttons(new_pets)))
 
-    view = create_view(make_buttons(current_pets))
-    
-    await interaction.response.send_message(embed=shop_embed, view=view, ephemeral=True, delete_after=60)
+
+    embed, pets_on_page = make_embed(current_page)
+    view = create_view(make_buttons(pets_on_page))
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True, delete_after=60)
 
 
 async def pet_menu_logic(interaction: discord.Interaction):
@@ -789,14 +802,14 @@ P.S. Voting gives you a temporary 2x wood multiplier.
                 "emoji": f"{'◻' if placed == 'None' else f'{minions['Acacia_I']}'}",
                 "item_name": f"{slot}",
                 "callback": minion_slot_view_callback,
-                "args": [slot, current_page]
+                "kwargs": {"slot": slot, "current_page":current_page}
             })
         rows = [row1]
         for i in range(0, len(buttons), 5):
             rows.append(buttons[i:i+5])
         
         rows.append([
-            {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "⬆️", "item_type": 'Minion_Type', 'item_name':'slot_costs', 'disabled': len(result["minions"])>=25},
+            {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "⬆️", 'disabled': len(result["minions"])>=25, 'kwargs': {"item_type": 'Minion_Type', 'item_name':'slot_costs'}},
             {"label": "Profile Stats", "style": discord.ButtonStyle.gray, "emoji": "📄", "callback": profile_button_callback},
             {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback}])
         
@@ -832,15 +845,22 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
             color=discord.Color.dark_red()
         )
         view = create_view([
-            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "item_type": "Minion_Type", "item_name": 'Acacia I', "current_page": current_page},
-            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "callback": profile_button_callback},
-            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "callback": profile_button_callback}],
+            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Acacia I'}},
+             {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Birch I'}},
+             {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Dark Oak I'}}],
 
-            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "callback": profile_button_callback},
-            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "callback": profile_button_callback},
-            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "callback": profile_button_callback}],
+            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Jungle I'}},
+             {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Oak I'}},
+             {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
 
-            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}]
+            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback,
+              "kwargs": {'index': current_page}}]
         ])
         await interaction.response.edit_message(embed=embed, view=view)
     else:
@@ -854,7 +874,7 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
             timestamp=datetime.now()
         )
         view = create_view([[
-            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}
+            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "kwargs": {"current_page": current_page}}
         ]])
         await interaction.response.edit_message(embed=embed, view=view)
 
@@ -872,7 +892,7 @@ async def is_downgrade(interaction, result, item_type, item_name):
     
     return player_index > item_index
 
-async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=2):
+async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=0,make_embed=None,make_buttons=None, **kwargs):
     await interaction.response.defer()
     if interaction.user.id not in buffer_db:
         await create_temp_user(interaction)
@@ -901,75 +921,17 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         result['pets_inv'][item_name] = {"pet_level": 0, "pet_xp": 0}
         result['pet_type'] = item_name
         result['balance'] -= cost
+        dirty_users.add(interaction.user.id)
 
-        tier_order = ["COMMON", "RARE", "EPIC", "LEGENDARY", "MYTHIC", "DIVINE"]
-        items_dict = items_map.ITEMS["pet_type"]
-        def make_embed(page):
-            tier = tier_order[page]
-            desc = f"**{tier} Pets**\n"
-            pets_on_page = []
-            for pet_name, pet_data in items_dict.items():
-                if pet_data["tier"] == tier:
-                    desc += f"- {pet_name} (Cost: ${pet_data['cost']:,})\n"
-                    pets_on_page.append(pet_name)
-            shop_embed = discord.Embed(title="Purchase Pets", description=desc, timestamp=datetime.now())
-            shop_embed.set_footer(text=f"Page {page + 1} of {len(tier_order)}")
-            return shop_embed, pets_on_page
-        
-        nonlocal_current_page = {"page": current_page}
-
-        async def left_callback(interaction: discord.Interaction):
-            nonlocal_current_page["page"] = (nonlocal_current_page["page"] - 1) % len(tier_order)
-            new_embed = make_embed(nonlocal_current_page["page"])[0]
-            pets = [pet for pet, data in items_dict.items() if data["tier"] == tier_order[nonlocal_current_page["page"]]]
-            new_view = create_view(make_buttons(pets))
-            await interaction.response.edit_message(embed=new_embed, view=new_view)
-
-        async def right_callback(interaction: discord.Interaction):
-            nonlocal_current_page["page"] = (nonlocal_current_page["page"] + 1) % len(tier_order)
-            new_embed = make_embed(nonlocal_current_page["page"])[0]
-            pets = [pet for pet, data in items_dict.items() if data["tier"] == tier_order[nonlocal_current_page["page"]]]
-            new_view = create_view(make_buttons(pets))
-            await interaction.response.edit_message(embed=new_embed, view=new_view)
-
-        # --- Button builder ---
-        def make_buttons(pets_list):
-            row1 = [
-                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback},
-                {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback}
-            ]
-
-            buttons = [{
-                "label": f"Buy {pet}",
-                "style": discord.ButtonStyle.blurple,
-                "emoji": pets[pet],
-                "item_type": "pet_type",
-                "item_name": pet,
-                "disabled": pet in result["pets_inv"],
-                "kwargs": {
-                    "item_type": "pet_type",
-                    "item_name": pet,
-                    "current_page": current_page
-                }
-            } for pet in pets_list]
-
-            rows = [row1]
-            for i in range(0, len(buttons), 5):
-                rows.append(buttons[i:i+5])
-
-            rows.append([
-                {"label": "Your Pets", "style": discord.ButtonStyle.green, "emoji": "📄", "callback": pet_menu_callback},
-                {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback}
-            ])
-
-            return rows
-
-        shop_embed, pets_on_page = make_embed(current_page)
-
-        new_view = create_view(make_buttons(pets_on_page))
-
-        await interaction.edit_original_response(content=f"✅ You purchased {pets[item_name]} {item_name} for ${item_info['cost']:,}!",view=new_view)
-
+        if make_embed and make_buttons:
+            embed, pets_on_page = make_embed(current_page)
+            new_view = create_view(make_buttons(pets_on_page))
+            await interaction.edit_original_response(
+                content=f"✅ You purchased {pets[item_name]} {item_name} for ${item_info['cost']:,}!",
+                embed=embed,
+                view=new_view
+            )
+        return
 
 
 
@@ -1005,7 +967,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
             )
 
         view = create_view([
-        {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "👷", "item_type": 'Minion_Type', 'item_name':'slot_costs'},
+        {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "👷", "kwargs": {"item_type": 'Minion_Type', 'item_name':'slot_costs'}},
         {"label": "View Current Minions", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": shop_minion_callback},
         {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
         {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.gray, "emoji": "🔙", "callback": shop_button_callback}
@@ -1022,13 +984,13 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
             color=discord.Color.dark_red()
         )
         view = create_view([
-            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "item_type": "Minion_Type", "item_name": 'Acacia I'},
-            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "callback": profile_button_callback},
-            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "callback": profile_button_callback}],
+            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Acacia I'}},
+            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Birch I'}},
+            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Dark Oak I'}}],
 
-            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "callback": profile_button_callback},
-            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "callback": profile_button_callback},
-            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "callback": profile_button_callback}],
+            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Jungle I'}},
+            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Oak I'}},
+            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
 
             [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}]
         ])

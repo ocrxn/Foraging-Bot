@@ -53,7 +53,6 @@ def create_view(button_configs):
                     # Fallback logic for shop/sell buttons with no custom callback
 
                     button = Button(**button_kwargs)
-
                     kwargs = config.get('kwargs', {})
 
                     async def callback(interaction, kwargs=kwargs):
@@ -74,18 +73,7 @@ def create_view(button_configs):
                             print(f"{thing}: {config[thing]}")
 
                     button.callback = default_cb
-                    # def create_button_callback(callback, args=None,kwargs=None):
-                    #     args = args or []
-                    #     kwargs = kwargs or {}
-                    #
-                    #     async def cb(interaction):
-                    #         await callback(interaction, *args, **kwargs)
-                    #
-                    #     return cb
-                    # if 'callback' in config:
-                    #     button.callback = create_button_callback(config['callback'], config.get('args', []), config.get('kwargs', {}))
-                    # else:
-                    #     print("Config is missing 'callback")
+
 
                 view.add_item(button)
 
