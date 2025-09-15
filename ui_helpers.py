@@ -5,6 +5,14 @@ async def vote_button_callback(interaction: discord.Interaction):
     from logic import vote_logic
     await vote_logic(interaction)
 
+async def create_clan_callback(interaction: discord.Interaction):
+    from logic import create_clan_logic
+    await create_clan_logic(interaction)
+
+async def clans_callback(interaction: discord.Interaction):
+    from logic import clans_logic
+    await clans_logic(interaction)
+
 async def lb_button_callback(interaction: discord.Interaction, page=1):
     from logic import leaderboard_logic
     await leaderboard_logic(interaction, callback='callback', page=page)
@@ -51,7 +59,7 @@ async def pet_menu_callback(interaction: discord.Interaction):
 
 async def shop_minion_callback(interaction: discord.Interaction, current_page):
     from logic import shop_minion_logic
-    await shop_minion_logic(interaction, start_page=current_page['index'])
+    await shop_minion_logic(interaction, current_page=current_page)
 
 async def minion_slot_view_callback(interaction: discord.Interaction, slot, current_page):
     from logic import minion_slot_view_logic

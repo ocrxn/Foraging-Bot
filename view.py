@@ -75,6 +75,6 @@ def create_view(button_configs):
                     button.callback = default_cb
 
 
-                view.add_item(button)
+            view.add_item(button)
 
     return view

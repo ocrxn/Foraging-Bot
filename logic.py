@@ -1,5 +1,4 @@
 import time
-
 from bot_instance import bot
 from config import *
 from datetime import datetime
@@ -17,22 +16,7 @@ from psycopg2 import Error
 import random
 
 
-from ui_helpers import (
-    vote_button_callback,
-    lb_button_callback,
-    forage_button_callback,
-    profile_button_callback,
-    log_totals_callback,
-    shop_button_callback,
-    shop_inventory_callback,
-    sell_inventory_callback,
-    shop_axe_callback,
-    shop_armor_callback,
-    shop_pet_callback,
-    pet_menu_callback,
-    shop_minion_callback,
-    minion_slot_view_callback,
-)
+from ui_helpers import *
 
 from view import create_view
 
@@ -140,6 +124,7 @@ async def help_logic(interaction: discord.Interaction):
         "/shop": "Purchase useful tools and items",
         "/sell": "Sell menu to sell your logs",
         "/sa": "Instantly sell all logs",
+        "/clans": "Discover/Join Foraging Clans!",
         "/equip_pet": "Equip a pet you own.",
         "/vote": "Vote for Foraging Bot on top.gg - Temporary boost for voting",
         "/leaderboard": "View top leaderboards",
@@ -191,7 +176,6 @@ Coming Soon!
     vote_embed.set_author(name=interaction.user)
     view = create_view([
     {"label": "Vote", "emoji": "<a:Vote:1383117707519459418>", "url": "https://www.top.gg/"},
-    {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
     {"label": "Profile Stats", "style": discord.ButtonStyle.blurple, "emoji": "📄", "callback": profile_button_callback},
     {"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
 ])
@@ -202,13 +186,75 @@ Coming Soon!
 async def vote(interaction: discord.Interaction):
     await vote_logic(interaction)
 
+user_selection_state = {}
 
-from datetime import datetime
-import discord
-from discord.ui import View, Button
+async def create_clan_logic(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
 
-from datetime import datetime
-import discord
+    if not result:
+        await _create_account_logic(interaction)
+    if result['balance'] < 1_000_000:
+        await interaction.followup.send("You do not have enough money. Cost to create clan: $1,000,000", ephemeral=True, delete_after=15)
+        return
+
+    key = (user_id, 'create_clan')
+    REQUIRED_FIELDS = ['clan_name', 'clan_size', 'min_entry_level']
+    async def check_and_process(inter):
+        data = user_selection_state.get(key, {})
+        if REQUIRED_FIELDS.issubset(data.keys()):
+            await process_movie_data(inter, user_id, data)
+            user_selection_state.pop(key, None)
+
+
+
+    clans_embed = discord.Embed(
+        title="Your Clan",
+        description=f"""
+1. Create a clan ($1,000,000)
+2. Join an existing clan
+**[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
+        timestamp=datetime.now()
+    )
+    clans_embed.set_author(name=interaction.user)
+    view = create_view([
+        {"label": "Create a Clan", "style": discord.ButtonStyle.green, "emoji": "➕",
+         "callback": create_clan_callback},
+        {"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
+    ])
+
+    await interaction.response.send_message(embed=clans_embed, view=view, ephemeral=True, delete_after=20)
+
+async def clans_logic(interaction: discord.Interaction):
+    user_id = interaction.user.id
+    result = buffer_db.get(user_id) or await retrieve(interaction)
+
+    if not result:
+        await _create_account_logic(interaction)
+
+    clans_embed = discord.Embed(
+        title="Discover Foraging Clans",
+        description=f"""
+**UNDER DEVELOPMENT**
+1. Create a clan ($1,000,000)
+2. Join an existing clan
+**[Vote now!](https://www.top.gg)** and receive a temporary 2x wood multiplier""",
+        timestamp=datetime.now()
+    )
+    clans_embed.set_author(name=interaction.user)
+    view = create_view([
+        {"label": "Create Clan ($1 million)", "style": discord.ButtonStyle.green, "emoji": "➕", 'disabled': True,
+         "callback": create_clan_callback},
+        {"label": "Join Clan", "style": discord.ButtonStyle.green, "emoji": "➕",'disabled':True,
+         "callback": create_clan_callback},
+        {"label": "Shop", "style": discord.ButtonStyle.gray, "emoji": "🛒", "callback": shop_button_callback},
+    ])
+
+    await interaction.response.send_message(embed=clans_embed, view=view, ephemeral=True, delete_after=20)
+
+@bot.tree.command(name='clans', description="Foraging Clans")
+async def clans(interaction: discord.Interaction):
+    await clans_logic(interaction)
 
 async def leaderboard_logic(interaction: discord.Interaction, callback: None, page=1):
     user_id = interaction.user.id
@@ -475,7 +521,7 @@ P.S. Voting gives you a temporary 2x wood multiplier
         {"label": "Axes", "style": discord.ButtonStyle.blurple, "emoji": f"{axes['diamond_axe']}", "callback": shop_axe_callback},
         {"label": "Armor", "style": discord.ButtonStyle.blurple, "emoji": f"{armor['diamond_armor']}", "callback": shop_armor_callback},
         {"label": "Pets", "style": discord.ButtonStyle.blurple, "emoji": pets.get(result.get("pet_type"), "📄"), "callback": shop_pet_callback},
-        {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak_I']}", "callback": shop_minion_callback, "args": [{"index": 0}]}
+        {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak_I']}", "callback": shop_minion_callback, "kwargs": {"current_page": 0}}
     ]
     row2=[
         {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
@@ -810,7 +856,7 @@ async def equip_pet(interaction: discord.Interaction, message: str):
     await equip_pet_logic(interaction, message)
 
 
-async def shop_minion_logic(interaction: discord.Interaction, start_page=0):
+async def shop_minion_logic(interaction: discord.Interaction, current_page):
     user_id = interaction.user.id
     result = buffer_db.get(user_id) or await retrieve(interaction)
 
@@ -824,10 +870,9 @@ async def shop_minion_logic(interaction: discord.Interaction, start_page=0):
     minion_slots = list(minion_data.items())
     per_page = 5
     total_pages = max(1, (len(minion_slots) + per_page - 1) // per_page)
-    current_page = {"index": start_page}
 
-    def make_embed(page: int):
-        start = page * per_page
+    def make_embed(current_page):
+        start = current_page * per_page
         end = start + per_page
         slot_entries = minion_slots[start:end]
 
@@ -844,16 +889,16 @@ P.S. Voting gives you a temporary 2x wood multiplier.
 """,
         timestamp=datetime.now()
         )
-        embed.set_footer(text=f"Page {page + 1} of {total_pages}")
+        embed.set_footer(text=f"Page {current_page + 1} of {total_pages}")
         return embed
 
-    def button_rows():
-        start = current_page["index"] * per_page
+    def button_rows(page):
+        start = page * per_page
         end = start + per_page
         slot_entries = minion_slots[start:end]
 
-        row1 = [{"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback},
-             {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback}]
+        row1 = [{"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback, "kwargs": {'current_page': page}},
+             {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback, "kwargs": {'current_page': page}}]
         buttons = []
         for slot, placed in slot_entries:
             buttons.append({
@@ -862,31 +907,34 @@ P.S. Voting gives you a temporary 2x wood multiplier.
                 "emoji": f"{'◻' if placed == 'None' else f'{minions['Acacia_I']}'}",
                 "item_name": f"{slot}",
                 "callback": minion_slot_view_callback,
-                "kwargs": {"slot": slot, "current_page":current_page}
+                "kwargs": {"slot": slot, "current_page": page}
             })
         rows = [row1]
         for i in range(0, len(buttons), 5):
             rows.append(buttons[i:i+5])
         
         rows.append([
-            {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "⬆️", 'disabled': len(result["minions"])>=25, 'kwargs': {"item_type": 'Minion_Type', 'item_name':'slot_costs', 'current_page': current_page['index']}},
+            {"label": "Purchase Additional Minion Slot", "style": discord.ButtonStyle.green, "emoji": "⬆️",
+                'disabled': len(result["minions"])>=25, 'kwargs': {"item_type": 'Minion_Type', 'item_name':'slot_costs', 'current_page': page}},
             {"label": "Profile Stats", "style": discord.ButtonStyle.gray, "emoji": "📄", "callback": profile_button_callback},
             {"label": "Back to [Shop: Main]", "style": discord.ButtonStyle.danger, "emoji": "🔙", "callback": shop_button_callback}])
         
         return rows
 
-    async def left_callback(interaction: discord.Interaction):
-        current_page["index"] = (current_page["index"] - 1) % total_pages
-        new_embed = make_embed(current_page["index"])
-        await interaction.response.edit_message(embed=new_embed, view=create_view(button_rows()))
+    async def left_callback(interaction: discord.Interaction, **kwargs):
+        current_page = kwargs.get('current_page', 0)
+        current_page = (current_page - 1) % total_pages
+        new_embed = make_embed(current_page)
+        await interaction.response.edit_message(embed=new_embed, view=create_view(button_rows(current_page)))
 
-    async def right_callback(interaction: discord.Interaction):
-        current_page["index"] = (current_page["index"] + 1) % total_pages
-        new_embed = make_embed(current_page["index"])
-        await interaction.response.edit_message(embed=new_embed, view=create_view(button_rows()))
+    async def right_callback(interaction: discord.Interaction, **kwargs):
+        current_page = kwargs.get('current_page', 0)
+        current_page = (current_page + 1) % total_pages
+        new_embed = make_embed(current_page)
+        await interaction.response.edit_message(embed=new_embed, view=create_view(button_rows(current_page)))
 
 
-    await interaction.response.send_message(embed=make_embed(current_page["index"]), view=create_view(button_rows()), ephemeral=True, delete_after=60)
+    await interaction.response.send_message(embed=make_embed(current_page), view=create_view(button_rows(current_page)), ephemeral=True, delete_after=60)
     
 
 async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, current_page):
@@ -920,7 +968,7 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
               "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
 
             [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback,
-              "kwargs": {'index': current_page}}]
+              "kwargs": {'current_page': current_page}}]
         ])
         await interaction.response.edit_message(embed=embed, view=view)
     else:
@@ -934,11 +982,9 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
             timestamp=datetime.now()
         )
         view = create_view([[
-            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "kwargs": {"current_page": current_page}}
+            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "kwargs": {'current_page': current_page}}
         ]])
         await interaction.response.edit_message(embed=embed, view=view)
-
-
 
 
 async def is_downgrade(interaction, result, item_type, item_name):
@@ -1049,7 +1095,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         
         embed = discord.Embed(
             title=f"Minion Slot {0}: Empty",
-            description=f"No minion is placed here.\nWould you like to purchase one?\n{current_page}",
+            description=f"You purchased {item_type} {item_name}",
             color=discord.Color.dark_red()
         )
         view = create_view([
