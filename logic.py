@@ -1,4 +1,6 @@
 import time
+from idlelib.help import copy_strip
+
 from bot_instance import bot
 from config import *
 from datetime import datetime
@@ -521,7 +523,7 @@ P.S. Voting gives you a temporary 2x wood multiplier
         {"label": "Axes", "style": discord.ButtonStyle.blurple, "emoji": f"{axes['diamond_axe']}", "callback": shop_axe_callback},
         {"label": "Armor", "style": discord.ButtonStyle.blurple, "emoji": f"{armor['diamond_armor']}", "callback": shop_armor_callback},
         {"label": "Pets", "style": discord.ButtonStyle.blurple, "emoji": pets.get(result.get("pet_type"), "📄"), "callback": shop_pet_callback},
-        {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak_I']}", "callback": shop_minion_callback, "kwargs": {"current_page": 0}}
+        {"label": "Minions", "style": discord.ButtonStyle.blurple, "emoji": f"{minions['Oak I']}", "callback": shop_minion_callback, "kwargs": {"current_page": 0}}
     ]
     row2=[
         {"label": "Chop Tree", "style": discord.ButtonStyle.green, "emoji": "🌳", "callback": forage_button_callback},
@@ -865,26 +867,24 @@ async def shop_minion_logic(interaction: discord.Interaction, current_page):
 
     if not result:
         await _create_account_logic(interaction)
+    minions_dict = dict(result['minions'].items())
 
-    minion_data = result['minions']
-    minion_slots = list(minion_data.items())
     per_page = 5
-    total_pages = max(1, (len(minion_slots) + per_page - 1) // per_page)
+    total_pages = max(1, (len(minions_dict) + per_page - 1) // per_page)
 
     def make_embed(current_page):
         start = current_page * per_page
         end = start + per_page
-        slot_entries = minion_slots[start:end]
 
         desc = ""
-        for idx, (slot, placed) in enumerate(slot_entries, start=start + 1):
-            desc += f"**Slot {idx}**: {placed if placed != 'None' else '*Empty*'}\n"
+        for key,value in list(minions_dict.items())[start:end]:
+            desc += f"**Slot {key}**: {value.get('name') if value != {} else '*Empty*'}\n"
 
         embed = discord.Embed(
-            title="Minions Menu",
+            title="Minions Menu - **UNDER HEAVY DEVELOPMENT**",
             description=f"""{desc}
-**Total Minion Slots: {len(minion_data)}**
-**Minions Placed: {len([m for m in minion_data.values() if m != 'None'])}**
+**Total Minion Slots: {len(minions_dict)}**
+**Minions Placed: {len([m for _,m in minions_dict.items() if m != {}])}**
 P.S. Voting gives you a temporary 2x wood multiplier.
 """,
         timestamp=datetime.now()
@@ -895,19 +895,18 @@ P.S. Voting gives you a temporary 2x wood multiplier.
     def button_rows(page):
         start = page * per_page
         end = start + per_page
-        slot_entries = minion_slots[start:end]
 
         row1 = [{"label": "", "style": discord.ButtonStyle.blurple, "emoji": "⬅️", "callback": left_callback, "kwargs": {'current_page': page}},
              {"label": "", "style": discord.ButtonStyle.blurple, "emoji": "➡️", "callback": right_callback, "kwargs": {'current_page': page}}]
         buttons = []
-        for slot, placed in slot_entries:
+        for key,value in list(minions_dict.items())[start:end]:
             buttons.append({
-                "label": f"Slot {slot}: {placed if placed != 'None' else 'Empty'}",
+                "label": f"Slot {key}: {value.get('name') if value != {} else 'Empty'}",
                 "style": discord.ButtonStyle.blurple,
-                "emoji": f"{'◻' if placed == 'None' else f'{minions['Acacia_I']}'}",
-                "item_name": f"{slot}",
+                "emoji": f"{'◻' if value == {} else f'{minions[value.get('name')]}'}",#Change to emoji
+                "item_name": f"{key}",
                 "callback": minion_slot_view_callback,
-                "kwargs": {"slot": slot, "current_page": page}
+                "kwargs": {"slot": key, "current_page": page}
             })
         rows = [row1]
         for i in range(0, len(buttons), 5):
@@ -944,28 +943,28 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
     if isinstance(result.get('minions'), str):
         result['minions'] = json.loads(result['minions'])
 
-    minion = result["minions"].get(slot_name, "None")
+    minions_dict = dict(result['minions'].items())
 
-    if minion == "None":
+    if minions_dict.get(slot_name) == {}:
         embed = discord.Embed(
             title=f"Minion Slot {slot_name}: Empty",
-            description=f"No minion is placed here.\nWould you like to purchase one?",
+            description=f"""No minion is placed here.\nWould you like to purchase one?\nTier 1 minions cost $10,000""",
             color=discord.Color.dark_red()
         )
         view = create_view([
-            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Acacia I'}},
-             {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Birch I'}},
-             {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Dark Oak I'}}],
+            [{"label": "Acacia I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Acacia I', 'current_page': current_page, 'minion_slot': slot_name}},
+             {"label": "Birch I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Birch I', 'current_page': current_page, 'minion_slot': slot_name}},
+             {"label": "Dark Oak I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark Oak I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Dark Oak I', 'current_page': current_page, 'minion_slot': slot_name}}],
 
-            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Jungle I'}},
-             {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Oak I'}},
-             {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}",
-              "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
+            [{"label": "Jungle I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Jungle I', 'current_page': current_page, 'minion_slot': slot_name}},
+             {"label": "Oak I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Oak I', 'current_page': current_page, 'minion_slot': slot_name}},
+             {"label": "Spruce I $10k", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I', 'current_page': current_page, 'minion_slot': slot_name}}],
 
             [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback,
               "kwargs": {'current_page': current_page}}]
@@ -973,17 +972,35 @@ async def minion_slot_view_logic(interaction: discord.Interaction, slot_name, cu
         await interaction.response.edit_message(embed=embed, view=view)
     else:
         embed = discord.Embed(
-            title=f"{minion} — Slot: {slot_name}",
-            description=f"""**Level:** {minion['level']}
-**Stored Logs:** {minion['storage']}
-**XP:** {minion['xp']} / {minion['xp_needed']}
+            title=f"Slot {slot_name}: {minions_dict.get(slot_name).get('name')}",
+            description=f"""**Level:** Lvls not added
+**Stored Logs:** storage not added
+**XP:** xp not added
 """,
             color=discord.Color.green(),
             timestamp=datetime.now()
         )
-        view = create_view([[
-            {"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "kwargs": {'current_page': current_page}}
-        ]])
+        view = create_view([
+            [{"label": "Upgrade Level", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+              'disabled': True,
+              "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
+            [
+            {"label": "Fuel", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+                 'disabled': True,
+                 "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "AutoHopper", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+                 'disabled': True,
+                 "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "Upgrade Slot 1", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+                 'disabled': True,
+                 "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "Upgrade Slot 2", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}",
+                 'disabled': True,
+                 "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            ],
+            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback,
+              "kwargs": {'current_page': current_page}}]
+        ])
         await interaction.response.edit_message(embed=embed, view=view)
 
 
@@ -998,7 +1015,7 @@ async def is_downgrade(interaction, result, item_type, item_name):
     
     return player_index > item_index
 
-async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=0,make_embed=None,make_buttons=None, **kwargs):
+async def purchase_item(interaction: discord.Interaction, item_type:str, item_name: str, current_page=0,make_embed=None,make_buttons=None, minion_slot=None, **kwargs):
     await interaction.response.defer()
     if interaction.user.id not in buffer_db:
         await create_temp_user(interaction)
@@ -1055,7 +1072,7 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
             await interaction.edit_original_response(content=f"❌ Not enough coins! You need {cost:,}.")
             return
 
-        result["minions"][current_slots + 1] = 'None'
+        result["minions"][current_slots + 1] = {}
         result["balance"] -= cost
 
 
@@ -1088,26 +1105,41 @@ async def purchase_item(interaction: discord.Interaction, item_type:str, item_na
         await interaction.edit_original_response(embed=make_embed(current_page), content=f"✅ Slot unlocked! Total slots: {len(result['minions'])}")
 
 
-
     elif item_type == "Minion_Type":
+        if minion_slot is None:
+            await interaction.followup.send(content=f"**Error M101**. You need to specify a minion slot. Please use /bug_report to immediately report this bug along with the error code.", delete_after=100, ephemeral=True)
+            return
+
         if isinstance(result.get('minions'), str):
             result['minions'] = json.loads(result['minions'])
-        
+
+        cost = item_info['cost']
+        if result.get('balance') < cost:
+            await interaction.edit_original_response(content=f"Insufficient balance! You need ${cost:,}.")
+            return
+
+        result['balance'] -= cost
+        result['minions'][minion_slot] = {f'name': item_name}
+
         embed = discord.Embed(
-            title=f"Minion Slot {0}: Empty",
+            title=f"Minion Slot {minion_slot}: Empty",
             description=f"You purchased {item_type} {item_name}",
             color=discord.Color.dark_red()
         )
         view = create_view([
-            [{"label": "Acacia I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Acacia_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Acacia I'}},
-            {"label": "Birch I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Birch_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Birch I'}},
-            {"label": "Dark Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Dark_Oak_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Dark Oak I'}}],
-
-            [{"label": "Jungle I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Jungle_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Jungle I'}},
-            {"label": "Oak I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Oak_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Oak I'}},
-            {"label": "Spruce I", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce_I']}", "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
-
-            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "args": [current_page]}]
+            [{"label": "Upgrade Level", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}", 'disabled': True,
+                "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}}],
+            [
+            {"label": "Fuel", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}", 'disabled': True,
+                "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "AutoHopper", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}", 'disabled': True,
+                "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "Upgrade Slot 1", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}", 'disabled': True,
+                "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+            {"label": "Upgrade Slot 2", "style": discord.ButtonStyle.green, "emoji": f"{minions['Spruce I']}", 'disabled': True,
+                "kwargs": {"item_type": "Minion_Type", "item_name": 'Spruce I'}},
+             ],
+            [{"label": "Back", "style": discord.ButtonStyle.gray, "emoji": "↩️", "callback": shop_minion_callback, "kwargs": {'current_page': current_page}}]
         ])
         await interaction.edit_original_response(embed=embed, view=view)
 
